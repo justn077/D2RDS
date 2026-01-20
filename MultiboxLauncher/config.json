@@ -1,0 +1,11 @@
+{
+  "preLaunch": {
+    "enabled": true,
+    "path": "%DESKTOP%\\D2RKilla.ps1 - Shortcut.lnk"
+  },
+  "profiles": [
+    { "name": "CTA", "path": "%DESKTOP%\\CTA.lnk" },
+    { "name": "Chant", "path": "%DESKTOP%\\Chant.lnk" },
+    { "name": "Uber", "path": "%DESKTOP%\\Uber.lnk" }
+  ]
+}
