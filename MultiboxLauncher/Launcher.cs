@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -14,6 +15,7 @@ public sealed class LauncherConfig
     public string Region { get; set; } = "";
     public List<AccountProfile> Accounts { get; set; } = new();
     public List<LaunchProfile> Profiles { get; set; } = new();
+    public bool LockOrder { get; set; } = false;
 
     public void Normalize()
     {
@@ -143,18 +145,63 @@ public static class ProcessLauncher
 
     public static void LaunchShortcutOrFile(string path) => StartNoWait(path);
 
-    public static void LaunchExecutable(string exePath, string arguments, string workingDirectory)
+    public static Process? LaunchExecutable(string exePath, string arguments, string workingDirectory)
     {
         if (!File.Exists(exePath))
             throw new FileNotFoundException($"Executable not found: {exePath}");
 
-        Process.Start(new ProcessStartInfo
+        return Process.Start(new ProcessStartInfo
         {
             FileName = exePath,
             Arguments = arguments,
             WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
             UseShellExecute = true
         });
+    }
+
+    public static bool IsProcessRunning(string processName)
+    {
+        if (string.IsNullOrWhiteSpace(processName))
+            return false;
+
+        try
+        {
+            return Process.GetProcessesByName(processName).Length > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static async Task TrySetWindowTitleAsync(Process? process, string title, int timeoutMs = 10000, int pollMs = 200)
+    {
+        if (process is null || string.IsNullOrWhiteSpace(title))
+            return;
+
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                if (process.HasExited)
+                    return;
+
+                process.Refresh();
+                var handle = process.MainWindowHandle;
+                if (handle != IntPtr.Zero)
+                {
+                    SetWindowText(handle, title);
+                    return;
+                }
+
+                await Task.Delay(pollMs);
+            }
+        }
+        catch
+        {
+            // Best-effort only; ignore failures.
+        }
     }
 
     private static void StartNoWait(string path)
@@ -177,6 +224,21 @@ public static class ProcessLauncher
         if (System.IO.Path.GetExtension(expanded).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
         {
             var resolved = ShortcutResolver.Resolve(expanded);
+            if (System.IO.Path.GetExtension(resolved.TargetPath).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+            {
+                var psArgs = $"-NoProfile -ExecutionPolicy Bypass -File {QuoteArg(resolved.TargetPath)}";
+                if (!string.IsNullOrWhiteSpace(resolved.Arguments))
+                    psArgs += " " + resolved.Arguments;
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = psArgs,
+                    UseShellExecute = true
+                });
+                return;
+            }
+
             Process.Start(new ProcessStartInfo
             {
                 FileName = resolved.TargetPath,
@@ -215,6 +277,22 @@ public static class ProcessLauncher
         if (System.IO.Path.GetExtension(expanded).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
         {
             var resolved = ShortcutResolver.Resolve(expanded);
+            if (System.IO.Path.GetExtension(resolved.TargetPath).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+            {
+                var psArgs = $"-NoProfile -ExecutionPolicy Bypass -File {QuoteArg(resolved.TargetPath)}";
+                if (!string.IsNullOrWhiteSpace(resolved.Arguments))
+                    psArgs += " " + resolved.Arguments;
+
+                using var ps = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = psArgs,
+                    UseShellExecute = true
+                });
+                ps?.WaitForExit();
+                return;
+            }
+
             using var p = Process.Start(new ProcessStartInfo
             {
                 FileName = resolved.TargetPath,
@@ -240,6 +318,9 @@ public static class ProcessLauncher
             return "\"\"";
         return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetWindowText(IntPtr hWnd, string lpString);
 }
 
 public static class Defaults

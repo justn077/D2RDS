@@ -5,5 +5,6 @@
   },
   "installPath": "C:\\Program Files (x86)\\Diablo II Resurrected",
   "region": "",
+  "lockOrder": false,
   "accounts": []
 }

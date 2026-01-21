@@ -14,8 +14,7 @@ $handleOutput = & $handlePath -accepteula -a -p D2R.exe 2>&1
 
 if ($handleOutput -match "No matching handles found") {
     Write-Host "D2R is not running!" -ForegroundColor Red
-    pause
-    exit
+    exit 0
 }
 
 $handlesToKill = @()
@@ -36,8 +35,7 @@ foreach($line in $handleOutput) {
 
 if ($handlesToKill.Count -eq 0) {
     Write-Host "No D2R mutex handles found. Game may not be fully loaded yet." -ForegroundColor Red
-    pause
-    exit
+    exit 0
 }
 
 Write-Host "Found $($handlesToKill.Count) D2R handle(s) to kill:" -ForegroundColor Green

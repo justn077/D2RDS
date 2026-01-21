@@ -20,6 +20,8 @@ public partial class MainWindow : Window
         BtnBrowseInstall.Click += (_, _) => BrowseInstallPath();
         CmbRegion.SelectionChanged += (_, _) => SaveRegionSelection();
         TxtInstallPath.LostFocus += (_, _) => SaveInstallPath();
+        ChkLockOrder.Checked += (_, _) => SaveLockOrder(true);
+        ChkLockOrder.Unchecked += (_, _) => SaveLockOrder(false);
         Loaded += (_, _) => LoadButtons();
     }
 
@@ -57,8 +59,9 @@ public partial class MainWindow : Window
             EnsureRegionSelected();
             LoadSettings();
 
-            foreach (var account in _config.Accounts)
+            for (var i = 0; i < _config.Accounts.Count; i++)
             {
+                var account = _config.Accounts[i];
                 var displayName = string.IsNullOrWhiteSpace(account.Nickname) ? account.Email : account.Nickname;
 
                 var row = new StackPanel
@@ -100,10 +103,32 @@ public partial class MainWindow : Window
                 };
                 deleteButton.Click += (_, _) => DeleteAccount(account);
 
+                var upButton = new System.Windows.Controls.Button
+                {
+                    Content = "Up",
+                    Height = 40,
+                    Width = 45,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    IsEnabled = !_config.LockOrder && i > 0
+                };
+                upButton.Click += (_, _) => MoveAccount(account, -1);
+
+                var downButton = new System.Windows.Controls.Button
+                {
+                    Content = "Down",
+                    Height = 40,
+                    Width = 55,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    IsEnabled = !_config.LockOrder && i < _config.Accounts.Count - 1
+                };
+                downButton.Click += (_, _) => MoveAccount(account, 1);
+
                 row.Children.Add(launchButton);
                 row.Children.Add(emailText);
                 row.Children.Add(editButton);
                 row.Children.Add(deleteButton);
+                row.Children.Add(upButton);
+                row.Children.Add(downButton);
                 ProfilesPanel.Children.Add(row);
             }
 
@@ -125,6 +150,7 @@ public partial class MainWindow : Window
             CmbRegion.SelectedItem = selected;
 
         TxtInstallPath.Text = _config.InstallPath;
+        ChkLockOrder.IsChecked = _config.LockOrder;
     }
 
     private void EnsureRegionSelected()
@@ -172,6 +198,13 @@ public partial class MainWindow : Window
 
         _config.InstallPath = path;
         ConfigLoader.Save(_config);
+    }
+
+    private void SaveLockOrder(bool locked)
+    {
+        _config.LockOrder = locked;
+        ConfigLoader.Save(_config);
+        LoadButtons();
     }
 
     private void AddAccount()
@@ -253,6 +286,25 @@ public partial class MainWindow : Window
         LoadButtons();
     }
 
+    private void MoveAccount(AccountProfile account, int direction)
+    {
+        if (_config.LockOrder)
+            return;
+
+        var currentIndex = _config.Accounts.IndexOf(account);
+        if (currentIndex < 0)
+            return;
+
+        var newIndex = currentIndex + direction;
+        if (newIndex < 0 || newIndex >= _config.Accounts.Count)
+            return;
+
+        _config.Accounts.RemoveAt(currentIndex);
+        _config.Accounts.Insert(newIndex, account);
+        ConfigLoader.Save(_config);
+        LoadButtons();
+    }
+
     private async Task RunAccountAsync(AccountProfile account)
     {
         SetBusy(true);
@@ -276,9 +328,16 @@ public partial class MainWindow : Window
 
             if (config.PreLaunch.Enabled && !string.IsNullOrWhiteSpace(config.PreLaunch.Path))
             {
-                Log.Info($"Pre-launch starting: {config.PreLaunch.Path}");
-                await ProcessLauncher.RunPreLaunchAsync(config.PreLaunch.Path!);
-                Log.Info("Pre-launch finished");
+                if (ProcessLauncher.IsProcessRunning("D2R"))
+                {
+                    Log.Info($"Pre-launch starting: {config.PreLaunch.Path}");
+                    await ProcessLauncher.RunPreLaunchAsync(config.PreLaunch.Path!);
+                    Log.Info("Pre-launch finished");
+                }
+                else
+                {
+                    Log.Info("Pre-launch skipped: D2R not running");
+                }
             }
 
             var credential = CredentialStore.Read(account.CredentialId);
@@ -286,8 +345,10 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("Stored credentials not found. Re-add the account.");
 
             var args = BuildLaunchArguments(account.Email, credential.Value.Secret, region.Address);
+            var displayName = string.IsNullOrWhiteSpace(account.Nickname) ? account.Email : account.Nickname;
             Log.Info($"Launching: {d2rExe}");
-            ProcessLauncher.LaunchExecutable(d2rExe, args, config.InstallPath);
+            var process = ProcessLauncher.LaunchExecutable(d2rExe, args, config.InstallPath);
+            await ProcessLauncher.TrySetWindowTitleAsync(process, displayName);
             Log.Info("Launch triggered");
 
             SetStatus($"Done: {account.Email}");

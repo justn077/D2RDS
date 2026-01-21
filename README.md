@@ -34,6 +34,7 @@ Example (self-contained build):
 3) Click **Add Account**, enter email + password, and optionally a nickname.
 4) A new **Launch** button appears and persists between runs.
 5) Use **Edit** to change email/nickname. Use **Change password** to update credentials. **Delete** removes an account.
+6) Use **Up/Down** to reorder accounts. Use **Lock order** to prevent changes.
 
 Up to **7 accounts** are supported.
 

@@ -8,6 +8,7 @@
                 <Button Name="BtnAddAccount" Width="110" Margin="0,0,8,0">Add Account</Button>
                 <Button Name="BtnReload" Width="90" Margin="0,0,8,0">Reload</Button>
                 <Button Name="BtnEdit" Width="120" Margin="0,0,8,0">Edit config</Button>
+                <CheckBox Name="ChkLockOrder" VerticalAlignment="Center" Margin="0,0,8,0">Lock order</CheckBox>
                 <TextBlock Name="TxtStatus" VerticalAlignment="Center" />
             </StackPanel>
 
