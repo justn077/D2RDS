@@ -1,0 +1,22 @@
+<Window x:Class="MultiboxLauncher.RegionPickerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Select Region" Height="180" Width="320" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Margin="0,0,0,8" TextWrapping="Wrap">
+            Select your Battle.net region. You can change this later in the main window.
+        </TextBlock>
+
+        <ComboBox Grid.Row="1" Name="CmbRegion" Margin="0,0,0,12"/>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Name="BtnOk" Width="80">OK</Button>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -9,14 +9,34 @@ namespace MultiboxLauncher;
 
 public sealed class LauncherConfig
 {
-    public PreLaunchConfig? PreLaunch { get; set; }
+    public PreLaunchConfig PreLaunch { get; set; } = new();
+    public string InstallPath { get; set; } = Defaults.DefaultInstallPath;
+    public string Region { get; set; } = "";
+    public List<AccountProfile> Accounts { get; set; } = new();
     public List<LaunchProfile> Profiles { get; set; } = new();
+
+    public void Normalize()
+    {
+        PreLaunch ??= new PreLaunchConfig();
+        InstallPath = string.IsNullOrWhiteSpace(InstallPath) ? Defaults.DefaultInstallPath : InstallPath;
+        Region ??= "";
+        Accounts ??= new List<AccountProfile>();
+        Profiles ??= new List<LaunchProfile>();
+    }
 }
 
 public sealed class PreLaunchConfig
 {
     public bool Enabled { get; set; } = true;
     public string? Path { get; set; }
+}
+
+public sealed class AccountProfile
+{
+    public string Id { get; set; } = "";
+    public string Nickname { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string CredentialId { get; set; } = "";
 }
 
 public sealed class LaunchProfile
@@ -29,11 +49,16 @@ public static class ConfigLoader
 {
     public static string DefaultConfigPath => System.IO.Path.Combine(AppContext.BaseDirectory, "config.json");
 
-    public static LauncherConfig Load()
+    public static LauncherConfig LoadOrCreate()
     {
         var configPath = DefaultConfigPath;
         if (!File.Exists(configPath))
-            throw new FileNotFoundException($"Missing config file: {configPath}");
+        {
+            var created = new LauncherConfig();
+            created.Normalize();
+            Save(created);
+            return created;
+        }
 
         var json = File.ReadAllText(configPath);
         var config = JsonSerializer.Deserialize<LauncherConfig>(json, new JsonSerializerOptions
@@ -44,7 +69,19 @@ public static class ConfigLoader
         if (config is null)
             throw new InvalidOperationException("Failed to parse config.json");
 
+        config.Normalize();
         return config;
+    }
+
+    public static void Save(LauncherConfig config)
+    {
+        config.Normalize();
+        var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+        File.WriteAllText(DefaultConfigPath, json);
     }
 }
 
@@ -69,7 +106,10 @@ public static class PathTokens
     public static string Expand(string path)
     {
         var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-        return path.Replace("%DESKTOP%", desktop, StringComparison.OrdinalIgnoreCase);
+        var appDir = AppContext.BaseDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar);
+        return path
+            .Replace("%DESKTOP%", desktop, StringComparison.OrdinalIgnoreCase)
+            .Replace("%APPDIR%", appDir, StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -101,13 +141,38 @@ public static class ProcessLauncher
         return Task.Run(() => StartAndWait(path));
     }
 
-    public static void Launch(string path) => StartNoWait(path);
+    public static void LaunchShortcutOrFile(string path) => StartNoWait(path);
+
+    public static void LaunchExecutable(string exePath, string arguments, string workingDirectory)
+    {
+        if (!File.Exists(exePath))
+            throw new FileNotFoundException($"Executable not found: {exePath}");
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = exePath,
+            Arguments = arguments,
+            WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
+            UseShellExecute = true
+        });
+    }
 
     private static void StartNoWait(string path)
     {
         var expanded = PathTokens.Expand(path);
         if (!File.Exists(expanded))
             throw new FileNotFoundException($"Path not found: {expanded}");
+
+        if (System.IO.Path.GetExtension(expanded).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File {QuoteArg(expanded)}",
+                UseShellExecute = true
+            });
+            return;
+        }
 
         if (System.IO.Path.GetExtension(expanded).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
         {
@@ -135,6 +200,18 @@ public static class ProcessLauncher
         if (!File.Exists(expanded))
             throw new FileNotFoundException($"Path not found: {expanded}");
 
+        if (System.IO.Path.GetExtension(expanded).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+        {
+            using var p = Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File {QuoteArg(expanded)}",
+                UseShellExecute = true
+            });
+            p?.WaitForExit();
+            return;
+        }
+
         if (System.IO.Path.GetExtension(expanded).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
         {
             var resolved = ShortcutResolver.Resolve(expanded);
@@ -156,4 +233,50 @@ public static class ProcessLauncher
         });
         proc?.WaitForExit();
     }
+
+    private static string QuoteArg(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "\"\"";
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+}
+
+public static class Defaults
+{
+    public const string DefaultInstallPath = @"C:\Program Files (x86)\Diablo II Resurrected";
+}
+
+public static class RegionOptions
+{
+    public static readonly IReadOnlyList<RegionOption> All = new List<RegionOption>
+    {
+        new("Americas", "us.actual.battle.net"),
+        new("Europe", "eu.actual.battle.net"),
+        new("Asia", "kr.actual.battle.net")
+    };
+
+    public static RegionOption? FindByName(string name)
+    {
+        foreach (var option in All)
+        {
+            if (string.Equals(option.Name, name, StringComparison.OrdinalIgnoreCase))
+                return option;
+        }
+        return null;
+    }
+}
+
+public sealed class RegionOption
+{
+    public string Name { get; }
+    public string Address { get; }
+
+    public RegionOption(string name, string address)
+    {
+        Name = name;
+        Address = address;
+    }
+
+    public override string ToString() => Name;
 }

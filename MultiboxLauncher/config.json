@@ -1,11 +1,9 @@
 {
   "preLaunch": {
     "enabled": true,
-    "path": "%DESKTOP%\\D2RKilla.ps1 - Shortcut.lnk"
+    "path": "%APPDIR%\\assets\\D2RKilla.ps1"
   },
-  "profiles": [
-    { "name": "CTA", "path": "%DESKTOP%\\CTA.lnk" },
-    { "name": "Chant", "path": "%DESKTOP%\\Chant.lnk" },
-    { "name": "Uber", "path": "%DESKTOP%\\Uber.lnk" }
-  ]
+  "installPath": "C:\\Program Files (x86)\\Diablo II Resurrected",
+  "region": "",
+  "accounts": []
 }
