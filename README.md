@@ -8,6 +8,26 @@ WPF launcher that:
 - `cd C:\Users\justn\src\D2RDS`
 - `dotnet run --project .\MultiboxLauncher\MultiboxLauncher.csproj`
 
+## Build & publish
+Build (Release):
+- `dotnet build .\D2RDS.sln -c Release`
+
+Publish (framework-dependent, single file):
+- `dotnet publish .\MultiboxLauncher\MultiboxLauncher.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\dist\D2RDS`
+
+Publish (self-contained, single file):
+- `dotnet publish .\MultiboxLauncher\MultiboxLauncher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\dist\D2RDS-selfcontained`
+
+Output EXE paths:
+- `dist\D2RDS\MultiboxLauncher.exe`
+- `dist\D2RDS-selfcontained\MultiboxLauncher.exe`
+
+## GitHub release (binary)
+Example (self-contained build):
+1) `dotnet publish .\MultiboxLauncher\MultiboxLauncher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\dist\D2RDS-selfcontained`
+2) `Compress-Archive -Path .\dist\D2RDS-selfcontained\* -DestinationPath .\dist\D2RDS-selfcontained.zip -Force`
+3) `gh release create v0.1.0 .\dist\D2RDS-selfcontained.zip --title "D2RDS v0.1.0" --notes "Initial release"`
+
 ## First-time setup (in the app)
 1) Pick your **Region** from the dropdown (prompted on first run).
 2) Set your **Install path** (folder picker). Default is `C:\Program Files (x86)\Diablo II Resurrected`.
