@@ -57,6 +57,7 @@ public partial class MainWindow : Window
             _config = ConfigLoader.LoadOrCreate();
 
             EnsureRegionSelected();
+            EnsureInstallPathSelected();
             LoadSettings();
 
             for (var i = 0; i < _config.Accounts.Count; i++)
@@ -187,6 +188,26 @@ public partial class MainWindow : Window
         {
             TxtInstallPath.Text = dialog.SelectedPath;
             SaveInstallPath();
+        }
+    }
+
+    private void EnsureInstallPathSelected()
+    {
+        var path = _config.InstallPath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            var pick = System.Windows.MessageBox.Show("Select your Diablo II Resurrected install folder now?", "Install path missing", MessageBoxButton.YesNo);
+            if (pick == MessageBoxResult.Yes)
+                BrowseInstallPath();
+            return;
+        }
+
+        var d2rExe = System.IO.Path.Combine(path, "D2R.exe");
+        if (!File.Exists(d2rExe))
+        {
+            var pick = System.Windows.MessageBox.Show("D2R.exe was not found in the selected install path. Select the correct folder now?", "Install path invalid", MessageBoxButton.YesNo);
+            if (pick == MessageBoxResult.Yes)
+                BrowseInstallPath();
         }
     }
 
@@ -324,10 +345,34 @@ public partial class MainWindow : Window
 
             var d2rExe = System.IO.Path.Combine(config.InstallPath, "D2R.exe");
             if (!File.Exists(d2rExe))
-                throw new FileNotFoundException($"D2R.exe not found at: {d2rExe}");
+            {
+                var pick = System.Windows.MessageBox.Show("D2R.exe not found. Select the correct install folder now?", "Install path invalid", MessageBoxButton.YesNo);
+                if (pick == MessageBoxResult.Yes)
+                {
+                    BrowseInstallPath();
+                    config = ConfigLoader.LoadOrCreate();
+                    d2rExe = System.IO.Path.Combine(config.InstallPath, "D2R.exe");
+                    if (!File.Exists(d2rExe))
+                        throw new FileNotFoundException($"D2R.exe not found at: {d2rExe}");
+                }
+                else
+                {
+                    throw new FileNotFoundException($"D2R.exe not found at: {d2rExe}");
+                }
+            }
 
             if (config.PreLaunch.Enabled && !string.IsNullOrWhiteSpace(config.PreLaunch.Path))
             {
+                if (!ProcessLauncher.TryValidatePreLaunchPath(config.PreLaunch.Path!, out var error))
+                {
+                    var disable = System.Windows.MessageBox.Show($"Pre-launch path invalid: {error}\n\nDisable pre-launch?", "Pre-launch error", MessageBoxButton.YesNo);
+                    if (disable == MessageBoxResult.Yes)
+                    {
+                        config.PreLaunch.Enabled = false;
+                        ConfigLoader.Save(config);
+                    }
+                }
+
                 if (ProcessLauncher.IsProcessRunning("D2R"))
                 {
                     Log.Info($"Pre-launch starting: {config.PreLaunch.Path}");

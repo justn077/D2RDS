@@ -174,6 +174,37 @@ public static class ProcessLauncher
         }
     }
 
+    public static bool TryValidatePreLaunchPath(string path, out string error)
+    {
+        error = "";
+        var expanded = PathTokens.Expand(path);
+        if (!File.Exists(expanded))
+        {
+            error = $"Path not found: {expanded}";
+            return false;
+        }
+
+        if (System.IO.Path.GetExtension(expanded).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var resolved = ShortcutResolver.Resolve(expanded);
+                if (!File.Exists(resolved.TargetPath))
+                {
+                    error = $"Shortcut target not found: {resolved.TargetPath}";
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public static async Task TrySetWindowTitleAsync(Process? process, string title, int timeoutMs = 10000, int pollMs = 200)
     {
         if (process is null || string.IsNullOrWhiteSpace(title))
