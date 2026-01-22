@@ -223,6 +223,7 @@ public partial class MainWindow : Window
         TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
         TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
         TxtBroadcastWindowHotkey.Text = _config.Broadcast.ToggleWindowHotkey;
+        TxtVersion.Text = $"v{UpdateService.CurrentVersion}";
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
 
