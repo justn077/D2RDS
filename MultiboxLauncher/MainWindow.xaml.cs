@@ -161,7 +161,7 @@ public partial class MainWindow : Window
 
                 var upButton = new System.Windows.Controls.Button
                 {
-                    Content = "Up",
+                    Content = "▲",
                     Height = 34,
                     Width = 45,
                     Margin = new Thickness(0),
@@ -172,7 +172,7 @@ public partial class MainWindow : Window
 
                 var downButton = new System.Windows.Controls.Button
                 {
-                    Content = "Down",
+                    Content = "▼",
                     Height = 34,
                     Width = 50,
                     Margin = new Thickness(0),
