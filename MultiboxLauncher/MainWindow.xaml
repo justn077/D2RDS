@@ -8,7 +8,8 @@
                 <Button Name="BtnAddAccount" Width="110" Margin="0,0,8,0">Add Account</Button>
                 <Button Name="BtnReload" Width="90" Margin="0,0,8,0">Reload</Button>
                 <Button Name="BtnEdit" Width="120" Margin="0,0,8,0">Edit config</Button>
-                <CheckBox Name="ChkLockOrder" VerticalAlignment="Center" Margin="0,0,8,0">Lock order</CheckBox>
+                <CheckBox Name="ChkLockOrder" VerticalAlignment="Center" Margin="0,0,8,0"
+                          ToolTip="Prevents reordering accounts with Up/Down.">Lock order</CheckBox>
                 <TextBlock Name="TxtStatus" VerticalAlignment="Center" />
             </StackPanel>
 
@@ -35,16 +36,22 @@
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,8,6" VerticalAlignment="Center">Broadcast</TextBlock>
                 <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,6">
-                    <CheckBox Name="ChkBroadcastEnabled" VerticalAlignment="Center" Margin="0,0,10,0">Enabled</CheckBox>
-                    <CheckBox Name="ChkBroadcastAll" VerticalAlignment="Center" Margin="0,0,10,0">All</CheckBox>
-                    <CheckBox Name="ChkBroadcastKeyboard" VerticalAlignment="Center" Margin="0,0,10,0">Keyboard</CheckBox>
-                    <CheckBox Name="ChkBroadcastMouse" VerticalAlignment="Center">Mouse</CheckBox>
+                    <CheckBox Name="ChkBroadcastEnabled" VerticalAlignment="Center" Margin="0,0,10,0"
+                              ToolTip="Master on/off for broadcasting input.">Enabled</CheckBox>
+                    <CheckBox Name="ChkBroadcastAll" VerticalAlignment="Center" Margin="0,0,10,0"
+                              ToolTip="If checked, broadcast to all running D2R windows. If unchecked, use per-account Bcast toggles.">All</CheckBox>
+                    <CheckBox Name="ChkBroadcastKeyboard" VerticalAlignment="Center" Margin="0,0,10,0"
+                              ToolTip="Broadcast keyboard input when enabled.">Keyboard</CheckBox>
+                    <CheckBox Name="ChkBroadcastMouse" VerticalAlignment="Center"
+                              ToolTip="Broadcast mouse input when enabled.">Mouse</CheckBox>
                 </StackPanel>
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Broadcast hotkeys</TextBlock>
                 <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
-                    <TextBox Name="TxtBroadcastHotkey" Width="120" Margin="0,0,8,0"/>
-                    <TextBox Name="TxtBroadcastModeHotkey" Width="120"/>
+                    <TextBox Name="TxtBroadcastHotkey" Width="120" Margin="0,0,8,0"
+                             ToolTip="Global hotkey to toggle broadcasting on/off (default: Ctrl+Alt+B)."/>
+                    <TextBox Name="TxtBroadcastModeHotkey" Width="120"
+                             ToolTip="Global hotkey to toggle All vs Selected mode (default: Ctrl+Alt+M)."/>
                 </StackPanel>
             </Grid>
         </StackPanel>

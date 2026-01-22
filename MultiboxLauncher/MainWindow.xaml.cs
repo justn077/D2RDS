@@ -123,7 +123,8 @@ public partial class MainWindow : Window
                     Content = "Bcast",
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 8, 0),
-                    IsChecked = account.BroadcastEnabled
+                    IsChecked = account.BroadcastEnabled,
+                    ToolTip = "Include this account when All is off and broadcasting is enabled."
                 };
                 broadcastToggle.Checked += (_, _) => ToggleAccountBroadcast(account, true);
                 broadcastToggle.Unchecked += (_, _) => ToggleAccountBroadcast(account, false);
