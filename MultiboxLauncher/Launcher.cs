@@ -16,6 +16,7 @@ public sealed class LauncherConfig
     public List<AccountProfile> Accounts { get; set; } = new();
     public List<LaunchProfile> Profiles { get; set; } = new();
     public bool LockOrder { get; set; } = false;
+    public BroadcastSettings Broadcast { get; set; } = new();
 
     public void Normalize()
     {
@@ -24,6 +25,7 @@ public sealed class LauncherConfig
         Region ??= "";
         Accounts ??= new List<AccountProfile>();
         Profiles ??= new List<LaunchProfile>();
+        Broadcast ??= new BroadcastSettings();
     }
 }
 
@@ -39,6 +41,17 @@ public sealed class AccountProfile
     public string Nickname { get; set; } = "";
     public string Email { get; set; } = "";
     public string CredentialId { get; set; } = "";
+    public bool BroadcastEnabled { get; set; } = true;
+}
+
+public sealed class BroadcastSettings
+{
+    public bool Enabled { get; set; } = false;
+    public bool BroadcastAll { get; set; } = true;
+    public bool Keyboard { get; set; } = true;
+    public bool Mouse { get; set; } = true;
+    public string ToggleBroadcastHotkey { get; set; } = "Ctrl+Alt+B";
+    public string ToggleModeHotkey { get; set; } = "Ctrl+Alt+M";
 }
 
 public sealed class LaunchProfile
@@ -235,6 +248,68 @@ public static class ProcessLauncher
         }
     }
 
+    public static IReadOnlyList<IntPtr> GetMainWindowHandlesByProcessName(string processName)
+    {
+        var results = new List<IntPtr>();
+        if (string.IsNullOrWhiteSpace(processName))
+            return results;
+
+        try
+        {
+            foreach (var process in Process.GetProcessesByName(processName))
+            {
+                var handle = process.MainWindowHandle;
+                if (handle == IntPtr.Zero)
+                    handle = TryGetMainWindowHandle(process.Id);
+                if (handle != IntPtr.Zero)
+                    results.Add(handle);
+            }
+        }
+        catch
+        {
+            return results;
+        }
+
+        return results;
+    }
+
+    public static IntPtr TryGetMainWindowHandle(int processId)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((hwnd, lParam) =>
+        {
+            GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == processId && IsWindowVisible(hwnd))
+            {
+                found = hwnd;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    public static bool IsForegroundProcess(string processName)
+    {
+        var foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero)
+            return false;
+
+        GetWindowThreadProcessId(foreground, out var pid);
+        if (pid == 0)
+            return false;
+
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            return string.Equals(proc.ProcessName, processName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static void StartNoWait(string path)
     {
         var expanded = PathTokens.Expand(path);
@@ -352,6 +427,20 @@ public static class ProcessLauncher
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool SetWindowText(IntPtr hWnd, string lpString);
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
 }
 
 public static class Defaults

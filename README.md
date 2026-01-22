@@ -35,6 +35,7 @@ Example (self-contained build):
 4) A new **Launch** button appears and persists between runs.
 5) Use **Edit** to change email/nickname. Use **Change password** to update credentials. **Delete** removes an account.
 6) Use **Up/Down** to reorder accounts. Use **Lock order** to prevent changes.
+7) Toggle **Broadcast** for keyboard/mouse mirroring. Use hotkeys to toggle on/off and switch All vs Selected.
 
 Up to **7 accounts** are supported.
 
@@ -61,12 +62,22 @@ Example `config.json`:
   },
   "installPath": "C:\\Program Files (x86)\\Diablo II Resurrected",
   "region": "Americas",
+  "lockOrder": false,
+  "broadcast": {
+    "enabled": false,
+    "broadcastAll": true,
+    "keyboard": true,
+    "mouse": true,
+    "toggleBroadcastHotkey": "Ctrl+Alt+B",
+    "toggleModeHotkey": "Ctrl+Alt+M"
+  },
   "accounts": [
     {
       "id": "a1b2c3",
       "nickname": "CTA",
       "email": "user@example.com",
-      "credentialId": "D2RDS:a1b2c3"
+      "credentialId": "D2RDS:a1b2c3",
+      "broadcastEnabled": true
     }
   ]
 }
@@ -78,6 +89,12 @@ Update its `handle64.exe` path if you move it.
 
 ## Logging
 Writes `logs\launcher.log` next to the built exe.
+
+## Broadcasting
+- Global toggle hotkey: `Ctrl+Alt+B` (default)
+- Mode hotkey (All vs Selected): `Ctrl+Alt+M` (default)
+- If **All** is enabled, all running D2R windows receive input.
+- If **All** is disabled, only accounts with **Bcast** checked receive input.
 
 ## Dev note
 `CONTEXT.md` is for development only and should not be included in user-facing packages.

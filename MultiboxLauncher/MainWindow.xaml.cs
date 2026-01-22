@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,10 +12,19 @@ namespace MultiboxLauncher;
 public partial class MainWindow : Window
 {
     private LauncherConfig _config = new();
+    private readonly Dictionary<string, int> _accountProcessIds = new();
+    private readonly BroadcastManager _broadcastManager;
+    private bool _broadcastInitialized;
 
     public MainWindow()
     {
         InitializeComponent();
+        _broadcastManager = new BroadcastManager(
+            () => _config.Broadcast,
+            GetBroadcastTargets,
+            IsForegroundD2R);
+        _broadcastManager.ToggleBroadcastRequested += ToggleBroadcastEnabled;
+        _broadcastManager.ToggleModeRequested += ToggleBroadcastMode;
         BtnReload.Click += (_, _) => LoadButtons();
         BtnEdit.Click += (_, _) => EditConfig();
         BtnAddAccount.Click += (_, _) => AddAccount();
@@ -22,7 +33,25 @@ public partial class MainWindow : Window
         TxtInstallPath.LostFocus += (_, _) => SaveInstallPath();
         ChkLockOrder.Checked += (_, _) => SaveLockOrder(true);
         ChkLockOrder.Unchecked += (_, _) => SaveLockOrder(false);
-        Loaded += (_, _) => LoadButtons();
+        ChkBroadcastEnabled.Checked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastEnabled.Unchecked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastAll.Checked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastAll.Unchecked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastKeyboard.Checked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastKeyboard.Unchecked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastMouse.Checked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastMouse.Unchecked += (_, _) => SaveBroadcastSettings();
+        TxtBroadcastHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
+        TxtBroadcastModeHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
+        Loaded += (_, _) =>
+        {
+            if (!_broadcastInitialized)
+            {
+                _broadcastManager.Initialize(this);
+                _broadcastInitialized = true;
+            }
+            LoadButtons();
+        };
     }
 
     private void SetStatus(string text) => TxtStatus.Text = text;
@@ -35,6 +64,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _broadcastManager.Dispose();
         base.OnClosed(e);
         System.Windows.Application.Current.Shutdown();
     }
@@ -86,6 +116,16 @@ public partial class MainWindow : Window
                     Margin = new Thickness(10, 0, 8, 0)
                 };
 
+                var broadcastToggle = new System.Windows.Controls.CheckBox
+                {
+                    Content = "Bcast",
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    IsChecked = account.BroadcastEnabled
+                };
+                broadcastToggle.Checked += (_, _) => ToggleAccountBroadcast(account, true);
+                broadcastToggle.Unchecked += (_, _) => ToggleAccountBroadcast(account, false);
+
                 var editButton = new System.Windows.Controls.Button
                 {
                     Content = "Edit",
@@ -126,6 +166,7 @@ public partial class MainWindow : Window
 
                 row.Children.Add(launchButton);
                 row.Children.Add(emailText);
+                row.Children.Add(broadcastToggle);
                 row.Children.Add(editButton);
                 row.Children.Add(deleteButton);
                 row.Children.Add(upButton);
@@ -152,6 +193,13 @@ public partial class MainWindow : Window
 
         TxtInstallPath.Text = _config.InstallPath;
         ChkLockOrder.IsChecked = _config.LockOrder;
+        ChkBroadcastEnabled.IsChecked = _config.Broadcast.Enabled;
+        ChkBroadcastAll.IsChecked = _config.Broadcast.BroadcastAll;
+        ChkBroadcastKeyboard.IsChecked = _config.Broadcast.Keyboard;
+        ChkBroadcastMouse.IsChecked = _config.Broadcast.Mouse;
+        TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
+        TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
+        _broadcastManager.UpdateHotkeys();
     }
 
     private void EnsureRegionSelected()
@@ -226,6 +274,24 @@ public partial class MainWindow : Window
         _config.LockOrder = locked;
         ConfigLoader.Save(_config);
         LoadButtons();
+    }
+
+    private void SaveBroadcastSettings()
+    {
+        _config.Broadcast.Enabled = ChkBroadcastEnabled.IsChecked == true;
+        _config.Broadcast.BroadcastAll = ChkBroadcastAll.IsChecked == true;
+        _config.Broadcast.Keyboard = ChkBroadcastKeyboard.IsChecked == true;
+        _config.Broadcast.Mouse = ChkBroadcastMouse.IsChecked == true;
+
+        var toggleHotkey = TxtBroadcastHotkey.Text.Trim();
+        var modeHotkey = TxtBroadcastModeHotkey.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(toggleHotkey))
+            _config.Broadcast.ToggleBroadcastHotkey = toggleHotkey;
+        if (!string.IsNullOrWhiteSpace(modeHotkey))
+            _config.Broadcast.ToggleModeHotkey = modeHotkey;
+
+        ConfigLoader.Save(_config);
+        _broadcastManager.UpdateHotkeys();
     }
 
     private void AddAccount()
@@ -326,6 +392,61 @@ public partial class MainWindow : Window
         LoadButtons();
     }
 
+    private void ToggleAccountBroadcast(AccountProfile account, bool enabled)
+    {
+        account.BroadcastEnabled = enabled;
+        ConfigLoader.Save(_config);
+    }
+
+    private void ToggleBroadcastEnabled()
+    {
+        _config.Broadcast.Enabled = !_config.Broadcast.Enabled;
+        ConfigLoader.Save(_config);
+        Dispatcher.Invoke(() =>
+        {
+            ChkBroadcastEnabled.IsChecked = _config.Broadcast.Enabled;
+        });
+    }
+
+    private void ToggleBroadcastMode()
+    {
+        _config.Broadcast.BroadcastAll = !_config.Broadcast.BroadcastAll;
+        ConfigLoader.Save(_config);
+        Dispatcher.Invoke(() =>
+        {
+            ChkBroadcastAll.IsChecked = _config.Broadcast.BroadcastAll;
+        });
+    }
+
+    private IReadOnlyList<IntPtr> GetBroadcastTargets()
+    {
+        if (_config.Broadcast.BroadcastAll)
+        {
+            return ProcessLauncher.GetMainWindowHandlesByProcessName("D2R");
+        }
+
+        var handles = new List<IntPtr>();
+        foreach (var account in _config.Accounts.Where(a => a.BroadcastEnabled))
+        {
+            if (_accountProcessIds.TryGetValue(account.Id, out var pid))
+            {
+                var handle = ProcessLauncher.TryGetMainWindowHandle(pid);
+                if (handle != IntPtr.Zero)
+                    handles.Add(handle);
+            }
+            else if (!string.IsNullOrWhiteSpace(account.Nickname))
+            {
+                handles.AddRange(BroadcastManager.FindWindowsByTitleExact(account.Nickname));
+            }
+        }
+        return handles;
+    }
+
+    private static bool IsForegroundD2R()
+    {
+        return ProcessLauncher.IsForegroundProcess("D2R");
+    }
+
     private async Task RunAccountAsync(AccountProfile account)
     {
         SetBusy(true);
@@ -393,6 +514,8 @@ public partial class MainWindow : Window
             var displayName = string.IsNullOrWhiteSpace(account.Nickname) ? account.Email : account.Nickname;
             Log.Info($"Launching: {d2rExe}");
             var process = ProcessLauncher.LaunchExecutable(d2rExe, args, config.InstallPath);
+            if (process is not null)
+                _accountProcessIds[account.Id] = process.Id;
             await ProcessLauncher.TrySetWindowTitleAsync(process, displayName);
             Log.Info("Launch triggered");
 

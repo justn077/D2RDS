@@ -20,6 +20,8 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,6" VerticalAlignment="Center">Region</TextBlock>
@@ -29,6 +31,20 @@
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
                     <TextBox Name="TxtInstallPath" Width="260"/>
                     <Button Name="BtnBrowseInstall" Width="70" Margin="8,0,0,0">Browse</Button>
+                </StackPanel>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,8,6" VerticalAlignment="Center">Broadcast</TextBlock>
+                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,6">
+                    <CheckBox Name="ChkBroadcastEnabled" VerticalAlignment="Center" Margin="0,0,10,0">Enabled</CheckBox>
+                    <CheckBox Name="ChkBroadcastAll" VerticalAlignment="Center" Margin="0,0,10,0">All</CheckBox>
+                    <CheckBox Name="ChkBroadcastKeyboard" VerticalAlignment="Center" Margin="0,0,10,0">Keyboard</CheckBox>
+                    <CheckBox Name="ChkBroadcastMouse" VerticalAlignment="Center">Mouse</CheckBox>
+                </StackPanel>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Broadcast hotkeys</TextBlock>
+                <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                    <TextBox Name="TxtBroadcastHotkey" Width="120" Margin="0,0,8,0"/>
+                    <TextBox Name="TxtBroadcastModeHotkey" Width="120"/>
                 </StackPanel>
             </Grid>
         </StackPanel>
