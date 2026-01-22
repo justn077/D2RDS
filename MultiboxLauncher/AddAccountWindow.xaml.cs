@@ -33,6 +33,7 @@ public partial class AddAccountWindow : Window
     {
         Title = title;
         BtnOk.Content = okText;
+        ChkChangePassword.Visibility = AllowPasswordChange ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnOk()

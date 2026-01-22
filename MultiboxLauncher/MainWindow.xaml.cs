@@ -310,9 +310,9 @@ public partial class MainWindow : Window
         }
 
         var dialog = new AddAccountWindow { Owner = this };
-        dialog.SetDialogMode("Add Account", "Add");
         dialog.RequirePassword = true;
         dialog.AllowPasswordChange = false;
+        dialog.SetDialogMode("Add Account", "Add");
         if (dialog.ShowDialog() != true)
             return;
 

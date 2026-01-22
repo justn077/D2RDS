@@ -29,7 +29,8 @@
         <TextBox Grid.Row="2" Grid.Column="1" Name="TxtNickname" Margin="0,0,0,10"/>
 
         <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,10">
-            <CheckBox Name="ChkChangePassword" Margin="0,0,12,0">Change password</CheckBox>
+            <CheckBox Name="ChkChangePassword" Margin="0,0,12,0"
+                      ToolTip="When editing an account, enable this to update the saved password.">Change password</CheckBox>
             <CheckBox Name="ChkShowPassword">Show</CheckBox>
         </StackPanel>
 
