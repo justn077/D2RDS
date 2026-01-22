@@ -19,8 +19,8 @@ Publish (self-contained, single file):
 - `dotnet publish .\MultiboxLauncher\MultiboxLauncher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\dist\D2RDS-selfcontained`
 
 Output EXE paths:
-- `dist\D2RDS\MultiboxLauncher.exe`
-- `dist\D2RDS-selfcontained\MultiboxLauncher.exe`
+- `dist\D2RDS\D2RDS.exe`
+- `dist\D2RDS-selfcontained\D2RDS.exe`
 
 ## GitHub release (binary)
 Example (self-contained build):
