@@ -25,6 +25,7 @@ public sealed class BroadcastManager : IDisposable
     private static IntPtr _keyboardHook = IntPtr.Zero;
     private static IntPtr _mouseHook = IntPtr.Zero;
     private static BroadcastManager? _instance;
+    private bool _hooksEnabled;
 
     public event Action? ToggleBroadcastRequested;
     public event Action? ToggleModeRequested;
@@ -43,7 +44,7 @@ public sealed class BroadcastManager : IDisposable
         _source = HwndSource.FromHwnd(handle);
         _source?.AddHook(WndProc);
         UpdateHotkeys();
-        EnsureHooks();
+        UpdateBroadcastState(_settingsProvider());
     }
 
     public void UpdateHotkeys()
@@ -59,6 +60,21 @@ public sealed class BroadcastManager : IDisposable
         RegisterHotkey(_source.Handle, HotkeyToggleMode, settings.ToggleModeHotkey);
     }
 
+    public void UpdateBroadcastState(BroadcastSettings settings)
+    {
+        var shouldEnable = settings.Enabled && (settings.Keyboard || settings.Mouse);
+        if (shouldEnable && !_hooksEnabled)
+        {
+            EnsureHooks();
+            _hooksEnabled = true;
+        }
+        else if (!shouldEnable && _hooksEnabled)
+        {
+            RemoveHooks();
+            _hooksEnabled = false;
+        }
+    }
+
     public void Dispose()
     {
         if (_source is not null)
@@ -70,6 +86,7 @@ public sealed class BroadcastManager : IDisposable
 
         _source = null;
         RemoveHooks();
+        _hooksEnabled = false;
         _instance = null;
     }
 

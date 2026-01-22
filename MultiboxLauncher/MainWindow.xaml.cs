@@ -29,6 +29,7 @@ public partial class MainWindow : Window
         BtnReload.Click += (_, _) => LoadButtons();
         BtnEdit.Click += (_, _) => EditConfig();
         BtnAddAccount.Click += (_, _) => AddAccount();
+        BtnUpdate.Click += async (_, _) => await CheckForUpdatesAsync();
         BtnBrowseInstall.Click += (_, _) => BrowseInstallPath();
         CmbRegion.SelectionChanged += (_, _) => SaveRegionSelection();
         TxtInstallPath.LostFocus += (_, _) => SaveInstallPath();
@@ -216,6 +217,7 @@ public partial class MainWindow : Window
         TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
         TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
         _broadcastManager.UpdateHotkeys();
+        _broadcastManager.UpdateBroadcastState(_config.Broadcast);
 
         EnsureBroadcastStatusWindow();
         UpdateBroadcastStatusWindow();
@@ -311,6 +313,7 @@ public partial class MainWindow : Window
 
         ConfigLoader.Save(_config);
         _broadcastManager.UpdateHotkeys();
+        _broadcastManager.UpdateBroadcastState(_config.Broadcast);
         UpdateBroadcastStatusWindow();
     }
 
@@ -426,6 +429,7 @@ public partial class MainWindow : Window
         {
             ChkBroadcastEnabled.IsChecked = _config.Broadcast.Enabled;
             UpdateBroadcastStatusWindow();
+            _broadcastManager.UpdateBroadcastState(_config.Broadcast);
         });
     }
 
@@ -485,6 +489,49 @@ public partial class MainWindow : Window
     private static bool IsForegroundD2R()
     {
         return ProcessLauncher.IsForegroundProcess("D2R");
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            BtnUpdate.IsEnabled = false;
+            TxtStatus.Text = "Checking for updates...";
+
+            var latest = await UpdateService.CheckLatestAsync();
+            if (latest is null)
+            {
+                System.Windows.MessageBox.Show("Unable to check for updates right now.", "Updates");
+                return;
+            }
+
+            var current = UpdateService.CurrentVersion;
+            if (!UpdateService.IsNewer(current, latest.Version))
+            {
+                System.Windows.MessageBox.Show($"You're up to date (v{current}).", "Updates");
+                return;
+            }
+
+            var result = System.Windows.MessageBox.Show(
+                $"Update available: v{latest.Version} (current v{current}).\n\nDownload and install now?",
+                "Update available",
+                MessageBoxButton.YesNo);
+            if (result != MessageBoxResult.Yes)
+                return;
+
+            await UpdateService.DownloadAndInstallAsync(latest);
+            System.Windows.MessageBox.Show("Update downloaded. The app will close and restart.", "Updating");
+            Close();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(ex.Message, "Update error");
+        }
+        finally
+        {
+            BtnUpdate.IsEnabled = true;
+            TxtStatus.Text = "";
+        }
     }
 
     private async Task RunAccountAsync(AccountProfile account)
