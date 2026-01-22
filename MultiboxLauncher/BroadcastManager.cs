@@ -141,6 +141,7 @@ public sealed class BroadcastManager : IDisposable
         return IntPtr.Zero;
     }
 
+    // Low-level keyboard hook: mirrors key messages to target windows when enabled.
     private static IntPtr KeyboardHookProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0 && _instance is not null)
@@ -177,6 +178,7 @@ public sealed class BroadcastManager : IDisposable
         return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
     }
 
+    // Low-level mouse hook: mirrors mouse messages to target windows when enabled.
     private static IntPtr MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0 && _instance is not null)
@@ -210,6 +212,7 @@ public sealed class BroadcastManager : IDisposable
         return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
     }
 
+    // Hotkey registration uses a simple string format like "Ctrl+Alt+B".
     private static bool RegisterHotkey(IntPtr handle, int id, string hotkey)
     {
         if (!TryParseHotkey(hotkey, out var modifiers, out var key))
@@ -262,6 +265,7 @@ public sealed class BroadcastManager : IDisposable
         return key != 0;
     }
 
+    // Build a WM_KEY* lParam based on scan code and flags.
     private static IntPtr BuildKeyLParam(uint scanCode, uint flags, bool keyUp)
     {
         var lParam = 0;
@@ -347,6 +351,7 @@ public sealed class BroadcastManager : IDisposable
         return (GetAsyncKeyState(vk) & 0x8000) != 0;
     }
 
+    // Fallback: resolve windows by exact title (used when process handle isn't available).
     public static IReadOnlyList<IntPtr> FindWindowsByTitleExact(string title)
     {
         var results = new List<IntPtr>();

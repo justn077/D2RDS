@@ -12,6 +12,7 @@ namespace MultiboxLauncher;
 
 public partial class MainWindow : Window
 {
+    // Tracks launched processes so broadcast can target selected accounts.
     private LauncherConfig _config = new();
     private readonly Dictionary<string, int> _accountProcessIds = new();
     private readonly BroadcastManager _broadcastManager;
@@ -575,6 +576,7 @@ public partial class MainWindow : Window
                 }
             }
 
+            // Pre-launch only applies once a D2R process exists; skip for the first instance.
             if (config.PreLaunch.Enabled && !string.IsNullOrWhiteSpace(config.PreLaunch.Path))
             {
                 if (!ProcessLauncher.TryValidatePreLaunchPath(config.PreLaunch.Path!, out var error))

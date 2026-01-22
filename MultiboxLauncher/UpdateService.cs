@@ -23,6 +23,7 @@ public static class UpdateService
         }
     }
 
+    // Checks the latest GitHub release; supports private repo access via token.
     public static async Task<UpdateInfo?> CheckLatestAsync(string? token)
     {
         using var client = new HttpClient();
@@ -61,6 +62,7 @@ public static class UpdateService
         return lat > cur;
     }
 
+    // Downloads the latest zip and applies it after the app exits, then restarts the app.
     public static async Task DownloadAndInstallAsync(UpdateInfo update)
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"D2RDS_Update_{Guid.NewGuid():N}");
