@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private LauncherConfig _config = new();
     private readonly Dictionary<string, int> _accountProcessIds = new();
     private readonly BroadcastManager _broadcastManager;
+    private BroadcastStatusWindow? _broadcastStatusWindow;
     private bool _broadcastInitialized;
 
     public MainWindow()
@@ -64,6 +65,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _broadcastStatusWindow?.Close();
         _broadcastManager.Dispose();
         base.OnClosed(e);
         System.Windows.Application.Current.Shutdown();
@@ -200,6 +202,9 @@ public partial class MainWindow : Window
         TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
         TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
         _broadcastManager.UpdateHotkeys();
+
+        EnsureBroadcastStatusWindow();
+        UpdateBroadcastStatusWindow();
     }
 
     private void EnsureRegionSelected()
@@ -292,6 +297,7 @@ public partial class MainWindow : Window
 
         ConfigLoader.Save(_config);
         _broadcastManager.UpdateHotkeys();
+        UpdateBroadcastStatusWindow();
     }
 
     private void AddAccount()
@@ -405,6 +411,7 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             ChkBroadcastEnabled.IsChecked = _config.Broadcast.Enabled;
+            UpdateBroadcastStatusWindow();
         });
     }
 
@@ -415,7 +422,26 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             ChkBroadcastAll.IsChecked = _config.Broadcast.BroadcastAll;
+            UpdateBroadcastStatusWindow();
         });
+    }
+
+    private void EnsureBroadcastStatusWindow()
+    {
+        if (_broadcastStatusWindow is not null)
+            return;
+
+        _broadcastStatusWindow = new BroadcastStatusWindow
+        {
+            Owner = this,
+            ShowActivated = false
+        };
+        _broadcastStatusWindow.Show();
+    }
+
+    private void UpdateBroadcastStatusWindow()
+    {
+        _broadcastStatusWindow?.UpdateStatus(_config.Broadcast);
     }
 
     private IReadOnlyList<IntPtr> GetBroadcastTargets()
