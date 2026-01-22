@@ -141,6 +141,9 @@ public sealed class BroadcastManager : IDisposable
                 var message = wParam.ToInt32();
                 if (message == WM_KEYDOWN || message == WM_KEYUP || message == WM_SYSKEYDOWN || message == WM_SYSKEYUP)
                 {
+                    if (ShouldSuppressHotkey(settings, vkCode))
+                        return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+
                     var targets = _instance._targetsProvider();
                     var foreground = GetForegroundWindow();
                     foreach (var target in targets)
@@ -269,9 +272,62 @@ public sealed class BroadcastManager : IDisposable
 
     private static IntPtr GetMouseWParam(uint message, uint mouseData)
     {
+        var keyState = GetMouseKeyState();
         if (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL)
-            return (IntPtr)((short)(mouseData >> 16));
-        return IntPtr.Zero;
+        {
+            var delta = (short)(mouseData >> 16);
+            return (IntPtr)((delta << 16) | (keyState & 0xFFFF));
+        }
+        return (IntPtr)keyState;
+    }
+
+    private static int GetMouseKeyState()
+    {
+        var state = 0;
+        if (IsKeyDown(VK_LBUTTON)) state |= MK_LBUTTON;
+        if (IsKeyDown(VK_RBUTTON)) state |= MK_RBUTTON;
+        if (IsKeyDown(VK_MBUTTON)) state |= MK_MBUTTON;
+        if (IsKeyDown(VK_XBUTTON1)) state |= MK_XBUTTON1;
+        if (IsKeyDown(VK_XBUTTON2)) state |= MK_XBUTTON2;
+        if (IsKeyDown(VK_SHIFT)) state |= MK_SHIFT;
+        if (IsKeyDown(VK_CONTROL)) state |= MK_CONTROL;
+        return state;
+    }
+
+    private static bool ShouldSuppressHotkey(BroadcastSettings settings, uint vkCode)
+    {
+        if (IsHotkeyChord(settings.ToggleBroadcastHotkey, vkCode))
+            return true;
+        if (IsHotkeyChord(settings.ToggleModeHotkey, vkCode))
+            return true;
+        return false;
+    }
+
+    private static bool IsHotkeyChord(string hotkey, uint vkCode)
+    {
+        if (!TryParseHotkey(hotkey, out var modifiers, out var key))
+            return false;
+        if (key == 0 || vkCode != key)
+            return false;
+        return AreHotkeyModifiersDown(modifiers);
+    }
+
+    private static bool AreHotkeyModifiersDown(uint modifiers)
+    {
+        if ((modifiers & MOD_CONTROL) != 0 && !IsKeyDown(VK_CONTROL))
+            return false;
+        if ((modifiers & MOD_ALT) != 0 && !IsKeyDown(VK_MENU))
+            return false;
+        if ((modifiers & MOD_SHIFT) != 0 && !IsKeyDown(VK_SHIFT))
+            return false;
+        if ((modifiers & MOD_WIN) != 0 && !(IsKeyDown(VK_LWIN) || IsKeyDown(VK_RWIN)))
+            return false;
+        return true;
+    }
+
+    private static bool IsKeyDown(int vk)
+    {
+        return (GetAsyncKeyState(vk) & 0x8000) != 0;
     }
 
     public static IReadOnlyList<IntPtr> FindWindowsByTitleExact(string title)
@@ -326,6 +382,23 @@ public sealed class BroadcastManager : IDisposable
     private const uint MOD_CONTROL = 0x0002;
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_WIN = 0x0008;
+    private const int VK_LBUTTON = 0x01;
+    private const int VK_RBUTTON = 0x02;
+    private const int VK_MBUTTON = 0x04;
+    private const int VK_XBUTTON1 = 0x05;
+    private const int VK_XBUTTON2 = 0x06;
+    private const int VK_SHIFT = 0x10;
+    private const int VK_CONTROL = 0x11;
+    private const int VK_MENU = 0x12;
+    private const int VK_LWIN = 0x5B;
+    private const int VK_RWIN = 0x5C;
+    private const int MK_LBUTTON = 0x0001;
+    private const int MK_RBUTTON = 0x0002;
+    private const int MK_SHIFT = 0x0004;
+    private const int MK_CONTROL = 0x0008;
+    private const int MK_MBUTTON = 0x0010;
+    private const int MK_XBUTTON1 = 0x0020;
+    private const int MK_XBUTTON2 = 0x0040;
 
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -400,4 +473,7 @@ public sealed class BroadcastManager : IDisposable
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
 }
