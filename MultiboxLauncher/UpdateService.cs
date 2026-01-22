@@ -10,6 +10,7 @@ namespace MultiboxLauncher;
 
 public sealed record UpdateInfo(string Version, string DownloadUrl);
 
+// Handles update checking and self-update flow.
 public static class UpdateService
 {
     private const string ReleasesUrl = "https://api.github.com/repos/justn077/D2RDS/releases/latest";

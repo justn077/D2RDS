@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Select Region" Height="180" Width="320" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
     <Grid Margin="16">
+        <!-- Region selection list -->
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>

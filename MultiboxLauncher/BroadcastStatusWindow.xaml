@@ -10,6 +10,7 @@
         Topmost="True"
         ResizeMode="NoResize"
         ShowActivated="False">
+    <!-- Always-on-top broadcast status pill -->
     <Border Background="#CC000000" CornerRadius="6" Padding="8,6">
         <TextBlock Name="TxtStatus" Foreground="White" FontSize="12" />
     </Border>

@@ -10,6 +10,7 @@ using System.Windows.Controls;
 
 namespace MultiboxLauncher;
 
+// Main UI for configuration, launching, and broadcasting control.
 public partial class MainWindow : Window
 {
     // Tracks launched processes so broadcast can target selected accounts.
@@ -28,6 +29,7 @@ public partial class MainWindow : Window
             IsForegroundD2R);
         _broadcastManager.ToggleBroadcastRequested += ToggleBroadcastEnabled;
         _broadcastManager.ToggleModeRequested += ToggleBroadcastMode;
+        _broadcastManager.ToggleWindowRequested += ToggleBroadcastForForegroundWindow;
         BtnReload.Click += (_, _) => LoadButtons();
         BtnEdit.Click += (_, _) => EditConfig();
         BtnAddAccount.Click += (_, _) => AddAccount();
@@ -47,6 +49,7 @@ public partial class MainWindow : Window
         ChkBroadcastMouse.Unchecked += (_, _) => SaveBroadcastSettings();
         TxtBroadcastHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastModeHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
+        TxtBroadcastWindowHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         Loaded += (_, _) =>
         {
             if (!_broadcastInitialized)
@@ -219,6 +222,7 @@ public partial class MainWindow : Window
         ChkBroadcastMouse.IsChecked = _config.Broadcast.Mouse;
         TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
         TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
+        TxtBroadcastWindowHotkey.Text = _config.Broadcast.ToggleWindowHotkey;
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
 
@@ -309,10 +313,13 @@ public partial class MainWindow : Window
 
         var toggleHotkey = TxtBroadcastHotkey.Text.Trim();
         var modeHotkey = TxtBroadcastModeHotkey.Text.Trim();
+        var windowHotkey = TxtBroadcastWindowHotkey.Text.Trim();
         if (!string.IsNullOrWhiteSpace(toggleHotkey))
             _config.Broadcast.ToggleBroadcastHotkey = toggleHotkey;
         if (!string.IsNullOrWhiteSpace(modeHotkey))
             _config.Broadcast.ToggleModeHotkey = modeHotkey;
+        if (!string.IsNullOrWhiteSpace(windowHotkey))
+            _config.Broadcast.ToggleWindowHotkey = windowHotkey;
 
         ConfigLoader.Save(_config);
         _broadcastManager.UpdateHotkeys();
@@ -445,6 +452,31 @@ public partial class MainWindow : Window
             ChkBroadcastAll.IsChecked = _config.Broadcast.BroadcastAll;
             UpdateBroadcastStatusWindow();
         });
+    }
+
+    // Hotkey: toggle broadcast for the currently focused D2R window only.
+    private void ToggleBroadcastForForegroundWindow()
+    {
+        var foreground = ProcessLauncher.GetForegroundWindowHandle();
+        if (foreground == IntPtr.Zero)
+            return;
+
+        var pid = ProcessLauncher.GetWindowProcessId(foreground);
+        var account = _config.Accounts.FirstOrDefault(a => _accountProcessIds.TryGetValue(a.Id, out var id) && id == pid);
+        if (account is null)
+        {
+            var title = ProcessLauncher.GetWindowTitle(foreground);
+            account = _config.Accounts.FirstOrDefault(a =>
+                string.Equals(a.Nickname, title, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(a.Email, title, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (account is null)
+            return;
+
+        account.BroadcastEnabled = !account.BroadcastEnabled;
+        ConfigLoader.Save(_config);
+        Dispatcher.Invoke(LoadButtons);
     }
 
     private void EnsureBroadcastStatusWindow()

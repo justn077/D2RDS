@@ -10,10 +10,12 @@ using System.Windows.Interop;
 
 namespace MultiboxLauncher;
 
+// Captures global input and mirrors it to selected D2R windows.
 public sealed class BroadcastManager : IDisposable
 {
     private const int HotkeyToggleBroadcast = 0xB001;
     private const int HotkeyToggleMode = 0xB002;
+    private const int HotkeyToggleWindow = 0xB003;
 
     private readonly Func<BroadcastSettings> _settingsProvider;
     private readonly Func<IReadOnlyList<IntPtr>> _targetsProvider;
@@ -29,6 +31,7 @@ public sealed class BroadcastManager : IDisposable
 
     public event Action? ToggleBroadcastRequested;
     public event Action? ToggleModeRequested;
+    public event Action? ToggleWindowRequested;
 
     public BroadcastManager(Func<BroadcastSettings> settingsProvider, Func<IReadOnlyList<IntPtr>> targetsProvider, Func<bool> isForegroundTarget)
     {
@@ -54,10 +57,12 @@ public sealed class BroadcastManager : IDisposable
 
         UnregisterHotKey(_source.Handle, HotkeyToggleBroadcast);
         UnregisterHotKey(_source.Handle, HotkeyToggleMode);
+        UnregisterHotKey(_source.Handle, HotkeyToggleWindow);
 
         var settings = _settingsProvider();
         RegisterHotkey(_source.Handle, HotkeyToggleBroadcast, settings.ToggleBroadcastHotkey);
         RegisterHotkey(_source.Handle, HotkeyToggleMode, settings.ToggleModeHotkey);
+        RegisterHotkey(_source.Handle, HotkeyToggleWindow, settings.ToggleWindowHotkey);
     }
 
     public void UpdateBroadcastState(BroadcastSettings settings)
@@ -135,6 +140,11 @@ public sealed class BroadcastManager : IDisposable
             else if (id == HotkeyToggleMode)
             {
                 ToggleModeRequested?.Invoke();
+                handled = true;
+            }
+            else if (id == HotkeyToggleWindow)
+            {
+                ToggleWindowRequested?.Invoke();
                 handled = true;
             }
         }
@@ -320,6 +330,8 @@ public sealed class BroadcastManager : IDisposable
         if (IsHotkeyChord(settings.ToggleBroadcastHotkey, vkCode))
             return true;
         if (IsHotkeyChord(settings.ToggleModeHotkey, vkCode))
+            return true;
+        if (IsHotkeyChord(settings.ToggleWindowHotkey, vkCode))
             return true;
         return false;
     }

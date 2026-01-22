@@ -5,6 +5,7 @@ using System.Text;
 
 namespace MultiboxLauncher;
 
+// Wraps Windows Credential Manager for storing account secrets.
 public static class CredentialStore
 {
     private const uint CRED_TYPE_GENERIC = 1;

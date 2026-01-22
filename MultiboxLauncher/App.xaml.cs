@@ -5,7 +5,7 @@ using System.Windows;
 namespace MultiboxLauncher;
 
 /// <summary>
-/// Interaction logic for App.xaml
+/// WPF application entry; uses default startup.
 /// </summary>
 public partial class App : System.Windows.Application
 {

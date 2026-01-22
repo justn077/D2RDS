@@ -2,6 +2,7 @@ using System.Windows;
 
 namespace MultiboxLauncher;
 
+// Simple picker for region selection on first run.
 public partial class RegionPickerWindow : Window
 {
     public RegionOption? SelectedRegion => CmbRegion.SelectedItem as RegionOption;

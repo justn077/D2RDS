@@ -2,6 +2,7 @@ using System.Windows;
 
 namespace MultiboxLauncher;
 
+// Dialog for adding or editing account profiles and credentials.
 public partial class AddAccountWindow : Window
 {
     public string Email => TxtEmail.Text.Trim();

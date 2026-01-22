@@ -69,7 +69,8 @@ Example `config.json`:
     "keyboard": true,
     "mouse": true,
     "toggleBroadcastHotkey": "Ctrl+Alt+B",
-    "toggleModeHotkey": "Ctrl+Alt+M"
+    "toggleModeHotkey": "Ctrl+Alt+M",
+    "toggleWindowHotkey": "Ctrl+Alt+N"
   },
   "accounts": [
     {
@@ -93,6 +94,7 @@ Writes `logs\launcher.log` next to the built exe.
 ## Broadcasting
 - Global toggle hotkey: `Ctrl+Alt+B` (default)
 - Mode hotkey (All vs Selected): `Ctrl+Alt+M` (default)
+- Window hotkey (toggle current window): `Ctrl+Alt+N` (default)
 - If **All** is enabled, all running D2R windows receive input.
 - If **All** is disabled, only accounts with **Bcast** checked receive input.
 

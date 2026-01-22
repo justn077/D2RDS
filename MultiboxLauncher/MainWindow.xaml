@@ -78,6 +78,7 @@
         </Style>
     </Window.Resources>
     <DockPanel Margin="14">
+        <!-- Header -->
         <Border DockPanel.Dock="Top" Background="{StaticResource PanelBrush}" CornerRadius="6" Padding="12" Margin="0,0,0,10" BorderBrush="{StaticResource BorderBrushDark}" BorderThickness="1">
             <StackPanel>
                 <TextBlock Text="D2R Demon Slayers" FontSize="22" FontWeight="SemiBold" />
@@ -85,6 +86,7 @@
             </StackPanel>
         </Border>
 
+        <!-- Settings panel -->
         <Border DockPanel.Dock="Top" Background="{StaticResource PanelBrush}" CornerRadius="6" Padding="12" Margin="0,0,0,10" BorderBrush="{StaticResource BorderBrushDark}" BorderThickness="1">
             <StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -130,17 +132,20 @@
                                   ToolTip="Broadcast mouse input when enabled.">Mouse</CheckBox>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Broadcast hotkeys</TextBlock>
-                    <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
-                        <TextBox Name="TxtBroadcastHotkey" Width="140" Margin="0,0,8,0"
-                                 ToolTip="Global hotkey to toggle broadcasting on/off (default: Ctrl+Alt+B)."/>
-                        <TextBox Name="TxtBroadcastModeHotkey" Width="140"
-                                 ToolTip="Global hotkey to toggle All vs Selected mode (default: Ctrl+Alt+M)."/>
-                    </StackPanel>
+                <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Broadcast hotkeys</TextBlock>
+                <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                    <TextBox Name="TxtBroadcastHotkey" Width="140" Margin="0,0,8,0"
+                             ToolTip="Global hotkey to toggle broadcasting on/off (default: Ctrl+Alt+B)."/>
+                    <TextBox Name="TxtBroadcastModeHotkey" Width="140"
+                             ToolTip="Global hotkey to toggle All vs Selected mode (default: Ctrl+Alt+M)."/>
+                    <TextBox Name="TxtBroadcastWindowHotkey" Width="140" Margin="8,0,0,0"
+                             ToolTip="Global hotkey to toggle broadcast for the active D2R window (default: Ctrl+Alt+N)."/>
+                </StackPanel>
                 </Grid>
             </StackPanel>
         </Border>
 
+        <!-- Accounts list -->
         <Border Background="{StaticResource PanelBrush}" CornerRadius="6" Padding="10" BorderBrush="{StaticResource BorderBrushDark}" BorderThickness="1">
             <DockPanel>
                 <Grid DockPanel.Dock="Top" Margin="0,0,0,6">

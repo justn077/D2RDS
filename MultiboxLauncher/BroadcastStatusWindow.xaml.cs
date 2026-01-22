@@ -3,6 +3,7 @@ using System.Windows;
 
 namespace MultiboxLauncher;
 
+// Small always-on-top overlay that shows current broadcast state.
 public partial class BroadcastStatusWindow : Window
 {
     public BroadcastStatusWindow()

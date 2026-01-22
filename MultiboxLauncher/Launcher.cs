@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 namespace MultiboxLauncher;
 
+// Config models and process helpers for launching and logging.
 public sealed class LauncherConfig
 {
     public PreLaunchConfig PreLaunch { get; set; } = new();
@@ -54,6 +55,7 @@ public sealed class BroadcastSettings
     public bool Mouse { get; set; } = true;
     public string ToggleBroadcastHotkey { get; set; } = "Ctrl+Alt+B";
     public string ToggleModeHotkey { get; set; } = "Ctrl+Alt+M";
+    public string ToggleWindowHotkey { get; set; } = "Ctrl+Alt+N";
 }
 
 public sealed class LaunchProfile
@@ -312,6 +314,33 @@ public static class ProcessLauncher
         }
     }
 
+    public static IntPtr GetForegroundWindowHandle()
+    {
+        return GetForegroundWindow();
+    }
+
+    public static string GetWindowTitle(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return "";
+
+        var length = GetWindowTextLength(hwnd);
+        if (length <= 0)
+            return "";
+
+        var builder = new System.Text.StringBuilder(length + 1);
+        GetWindowText(hwnd, builder, builder.Capacity);
+        return builder.ToString();
+    }
+
+    public static int GetWindowProcessId(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return 0;
+        GetWindowThreadProcessId(hwnd, out var pid);
+        return pid;
+    }
+
     private static void StartNoWait(string path)
     {
         var expanded = PathTokens.Expand(path);
@@ -440,6 +469,12 @@ public static class ProcessLauncher
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern int GetWindowTextLength(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
