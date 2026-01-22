@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -123,7 +124,8 @@ public partial class MainWindow : Window
                 {
                     Text = account.Email,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(8, 0, 8, 0)
+                    Margin = new Thickness(8, 0, 8, 0),
+                    Foreground = (System.Windows.Media.Brush)FindResource("TextBrush")
                 };
                 System.Windows.Controls.Grid.SetColumn(emailText, 1);
 
@@ -498,7 +500,7 @@ public partial class MainWindow : Window
             BtnUpdate.IsEnabled = false;
             TxtStatus.Text = "Checking for updates...";
 
-            var latest = await UpdateService.CheckLatestAsync();
+            var latest = await UpdateService.CheckLatestAsync(_config.UpdateToken);
             if (latest is null)
             {
                 System.Windows.MessageBox.Show("Unable to check for updates right now.", "Updates");
@@ -522,6 +524,10 @@ public partial class MainWindow : Window
             await UpdateService.DownloadAndInstallAsync(latest);
             System.Windows.MessageBox.Show("Update downloaded. The app will close and restart.", "Updating");
             Close();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            System.Windows.MessageBox.Show("Update check failed (404). If the repo is private, add a GitHub token to config.json (updateToken).", "Update error");
         }
         catch (Exception ex)
         {

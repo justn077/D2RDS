@@ -23,10 +23,12 @@ public static class UpdateService
         }
     }
 
-    public static async Task<UpdateInfo?> CheckLatestAsync()
+    public static async Task<UpdateInfo?> CheckLatestAsync(string? token)
     {
         using var client = new HttpClient();
         client.DefaultRequestHeaders.UserAgent.ParseAdd("D2RDS-Updater");
+        if (!string.IsNullOrWhiteSpace(token))
+            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         var json = await client.GetStringAsync(ReleasesUrl);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;

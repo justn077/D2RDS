@@ -94,7 +94,7 @@
                     <Button Name="BtnAddAccount" Width="110">Add Account</Button>
                     <Button Name="BtnReload" Width="90">Reload</Button>
                     <Button Name="BtnEdit" Width="120">Edit config</Button>
-                    <Button Name="BtnUpdate" Width="120">Check updates</Button>
+                    <Button Name="BtnUpdate" Width="120">Update D2RDS</Button>
                     <CheckBox Name="ChkLockOrder" Margin="0,0,12,0"
                               ToolTip="Prevents reordering accounts with Up/Down.">Lock order</CheckBox>
                     <TextBlock Name="TxtStatus" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>

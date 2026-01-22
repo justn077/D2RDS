@@ -17,6 +17,7 @@ public sealed class LauncherConfig
     public List<LaunchProfile> Profiles { get; set; } = new();
     public bool LockOrder { get; set; } = false;
     public BroadcastSettings Broadcast { get; set; } = new();
+    public string UpdateToken { get; set; } = "";
 
     public void Normalize()
     {
@@ -26,6 +27,7 @@ public sealed class LauncherConfig
         Accounts ??= new List<AccountProfile>();
         Profiles ??= new List<LaunchProfile>();
         Broadcast ??= new BroadcastSettings();
+        UpdateToken ??= "";
     }
 }
 

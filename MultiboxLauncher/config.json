@@ -14,5 +14,6 @@
     "toggleBroadcastHotkey": "Ctrl+Alt+B",
     "toggleModeHotkey": "Ctrl+Alt+M"
   },
+  "updateToken": "",
   "accounts": []
 }
