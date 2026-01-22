@@ -21,7 +21,7 @@ public partial class BroadcastStatusWindow : Window
 
     private void PositionNearTopLeft()
     {
-        Left = 10;
+        Left = 260;
         Top = 10;
     }
 }
