@@ -6,10 +6,10 @@
     <Window.Resources>
         <Color x:Key="ColorBackground">#0B0A0A</Color>
         <Color x:Key="ColorPanel">#141010</Color>
-        <Color x:Key="ColorPanelAlt">#251515</Color>
-        <Color x:Key="ColorBorder">#5A1F1F</Color>
-        <Color x:Key="ColorAccent">#C01818</Color>
-        <Color x:Key="ColorAccentSoft">#7F2020</Color>
+        <Color x:Key="ColorPanelAlt">#1A1111</Color>
+        <Color x:Key="ColorBorder">#3A1414</Color>
+        <Color x:Key="ColorAccent">#B01818</Color>
+        <Color x:Key="ColorAccentSoft">#6F1B1B</Color>
         <Color x:Key="ColorText">#E9DDC6</Color>
         <Color x:Key="ColorMuted">#B4A28A</Color>
 
@@ -35,7 +35,6 @@
             <Setter Property="Margin" Value="0,0,8,0"/>
             <Setter Property="Height" Value="34"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -51,10 +50,6 @@
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{StaticResource AccentSoftBrush}"/>
-                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
                     <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
                 </Trigger>
             </Style.Triggers>
