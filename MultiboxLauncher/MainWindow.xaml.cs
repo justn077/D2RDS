@@ -97,26 +97,34 @@ public partial class MainWindow : Window
                 var account = _config.Accounts[i];
                 var displayName = string.IsNullOrWhiteSpace(account.Nickname) ? account.Email : account.Nickname;
 
-                var row = new StackPanel
+                var row = new System.Windows.Controls.Grid
                 {
-                    Orientation = System.Windows.Controls.Orientation.Horizontal,
-                    Margin = new Thickness(0, 0, 0, 8)
+                    Margin = new Thickness(0, 0, 0, 6)
                 };
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(220) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(200) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(55) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(55) });
 
                 var launchButton = new System.Windows.Controls.Button
                 {
                     Content = $"Launch {displayName}",
-                    Height = 40,
-                    Width = 220
+                    Height = 36,
+                    Width = 210
                 };
                 launchButton.Click += async (_, _) => await RunAccountAsync(account);
+                System.Windows.Controls.Grid.SetColumn(launchButton, 0);
 
                 var emailText = new TextBlock
                 {
                     Text = account.Email,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(10, 0, 8, 0)
+                    Margin = new Thickness(8, 0, 8, 0)
                 };
+                System.Windows.Controls.Grid.SetColumn(emailText, 1);
 
                 var broadcastToggle = new System.Windows.Controls.CheckBox
                 {
@@ -128,44 +136,49 @@ public partial class MainWindow : Window
                 };
                 broadcastToggle.Checked += (_, _) => ToggleAccountBroadcast(account, true);
                 broadcastToggle.Unchecked += (_, _) => ToggleAccountBroadcast(account, false);
+                System.Windows.Controls.Grid.SetColumn(broadcastToggle, 2);
 
                 var editButton = new System.Windows.Controls.Button
                 {
                     Content = "Edit",
-                    Height = 40,
+                    Height = 34,
                     Width = 60,
-                    Margin = new Thickness(0, 0, 0, 0)
+                    Margin = new Thickness(0)
                 };
                 editButton.Click += (_, _) => EditAccount(account);
+                System.Windows.Controls.Grid.SetColumn(editButton, 3);
 
                 var deleteButton = new System.Windows.Controls.Button
                 {
                     Content = "Delete",
-                    Height = 40,
-                    Width = 70,
-                    Margin = new Thickness(8, 0, 0, 0)
+                    Height = 34,
+                    Width = 60,
+                    Margin = new Thickness(0)
                 };
                 deleteButton.Click += (_, _) => DeleteAccount(account);
+                System.Windows.Controls.Grid.SetColumn(deleteButton, 4);
 
                 var upButton = new System.Windows.Controls.Button
                 {
                     Content = "Up",
-                    Height = 40,
+                    Height = 34,
                     Width = 45,
-                    Margin = new Thickness(8, 0, 0, 0),
+                    Margin = new Thickness(0),
                     IsEnabled = !_config.LockOrder && i > 0
                 };
                 upButton.Click += (_, _) => MoveAccount(account, -1);
+                System.Windows.Controls.Grid.SetColumn(upButton, 5);
 
                 var downButton = new System.Windows.Controls.Button
                 {
                     Content = "Down",
-                    Height = 40,
-                    Width = 55,
-                    Margin = new Thickness(8, 0, 0, 0),
+                    Height = 34,
+                    Width = 50,
+                    Margin = new Thickness(0),
                     IsEnabled = !_config.LockOrder && i < _config.Accounts.Count - 1
                 };
                 downButton.Click += (_, _) => MoveAccount(account, 1);
+                System.Windows.Controls.Grid.SetColumn(downButton, 6);
 
                 row.Children.Add(launchButton);
                 row.Children.Add(emailText);
