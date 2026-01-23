@@ -580,6 +580,11 @@ public partial class MainWindow : Window
     private void ApplyMinimizeBehavior()
     {
         // Keep normal window style; minimize behavior handled in StateChanged.
+        if (AllowsTransparency)
+        {
+            // Ensure a compatible window style to avoid startup popups.
+            AllowsTransparency = false;
+        }
         WindowStyle = WindowStyle.SingleBorderWindow;
         ShowInTaskbar = true;
     }

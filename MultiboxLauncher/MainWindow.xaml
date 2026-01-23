@@ -12,6 +12,7 @@
         <Color x:Key="ColorAccentSoft">#6F1B1B</Color>
         <Color x:Key="ColorText">#E9DDC6</Color>
         <Color x:Key="ColorMuted">#B4A28A</Color>
+        <Color x:Key="ColorComboTextDark">#4A0F0F</Color>
 
         <SolidColorBrush x:Key="AppBackground" Color="{StaticResource ColorBackground}"/>
         <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource ColorPanel}"/>
@@ -21,6 +22,7 @@
         <SolidColorBrush x:Key="AccentSoftBrush" Color="{StaticResource ColorAccentSoft}"/>
         <SolidColorBrush x:Key="TextBrush" Color="{StaticResource ColorText}"/>
         <SolidColorBrush x:Key="MutedBrush" Color="{StaticResource ColorMuted}"/>
+        <SolidColorBrush x:Key="ComboTextDarkBrush" Color="{StaticResource ColorComboTextDark}"/>
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
@@ -66,10 +68,14 @@
 
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource ComboTextDarkBrush}"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrushDark}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Height" Value="28"/>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource ComboTextDarkBrush}"/>
         </Style>
 
         <Style TargetType="CheckBox">
