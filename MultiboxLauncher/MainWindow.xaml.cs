@@ -50,6 +50,9 @@ public partial class MainWindow : Window
         TxtBroadcastHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastModeHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastWindowHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
+        TxtBroadcastHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
+        TxtBroadcastModeHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
+        TxtBroadcastWindowHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
         Loaded += (_, _) =>
         {
             if (!_broadcastInitialized)
@@ -326,6 +329,50 @@ public partial class MainWindow : Window
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
         UpdateBroadcastStatusWindow();
+    }
+
+    private void OnHotkeyBoxKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.TextBox box)
+            return;
+
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+        if (IsModifierKey(key))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var hotkey = FormatHotkey(System.Windows.Input.Keyboard.Modifiers, key);
+        if (!string.IsNullOrWhiteSpace(hotkey))
+        {
+            box.Text = hotkey;
+            e.Handled = true;
+            SaveBroadcastSettings();
+        }
+    }
+
+    private static bool IsModifierKey(System.Windows.Input.Key key)
+    {
+        return key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl
+            || key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt
+            || key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift
+            || key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin;
+    }
+
+    private static string FormatHotkey(System.Windows.Input.ModifierKeys modifiers, System.Windows.Input.Key key)
+    {
+        if (key == System.Windows.Input.Key.None)
+            return "";
+
+        var parts = new List<string>();
+        if ((modifiers & System.Windows.Input.ModifierKeys.Control) != 0) parts.Add("Ctrl");
+        if ((modifiers & System.Windows.Input.ModifierKeys.Alt) != 0) parts.Add("Alt");
+        if ((modifiers & System.Windows.Input.ModifierKeys.Shift) != 0) parts.Add("Shift");
+        if ((modifiers & System.Windows.Input.ModifierKeys.Windows) != 0) parts.Add("Win");
+
+        parts.Add(key.ToString());
+        return string.Join("+", parts);
     }
 
     private void AddAccount()
