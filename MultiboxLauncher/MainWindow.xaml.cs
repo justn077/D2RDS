@@ -701,13 +701,13 @@ public partial class MainWindow : Window
             if (result != MessageBoxResult.Yes)
                 return;
 
-            await UpdateService.DownloadAndInstallAsync(latest);
+            await UpdateService.DownloadAndInstallAsync(latest, _config.UpdateToken);
             System.Windows.MessageBox.Show("Update downloaded. The app will close and restart.", "Updating");
             Close();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            System.Windows.MessageBox.Show("Update check failed (404). If the repo is private, add a GitHub token to config.json (updateToken).", "Update error");
+            System.Windows.MessageBox.Show("Update download failed (404). If the repo is private, add a GitHub token to config.json (updateToken).", "Update error");
         }
         catch (Exception ex)
         {

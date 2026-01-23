@@ -8,7 +8,7 @@ using System.Diagnostics;
 
 namespace MultiboxLauncher;
 
-public sealed record UpdateInfo(string Version, string DownloadUrl);
+public sealed record UpdateInfo(string Version, string DownloadUrl, string ApiDownloadUrl);
 
 // Handles update checking and self-update flow.
 public static class UpdateService
@@ -38,12 +38,14 @@ public static class UpdateService
         var version = tag.TrimStart('v', 'V');
 
         string downloadUrl = "";
+        string apiDownloadUrl = "";
         foreach (var asset in root.GetProperty("assets").EnumerateArray())
         {
             var name = asset.GetProperty("name").GetString() ?? "";
             if (name.Contains("selfcontained", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
                 downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+                apiDownloadUrl = asset.GetProperty("url").GetString() ?? "";
                 break;
             }
         }
@@ -51,7 +53,7 @@ public static class UpdateService
         if (string.IsNullOrWhiteSpace(downloadUrl) || string.IsNullOrWhiteSpace(version))
             return null;
 
-        return new UpdateInfo(version, downloadUrl);
+        return new UpdateInfo(version, downloadUrl, apiDownloadUrl);
     }
 
     public static bool IsNewer(string current, string latest)
@@ -64,7 +66,7 @@ public static class UpdateService
     }
 
     // Downloads the latest zip and applies it after the app exits, then restarts the app.
-    public static async Task DownloadAndInstallAsync(UpdateInfo update)
+    public static async Task DownloadAndInstallAsync(UpdateInfo update, string? token)
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"D2RDS_Update_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -72,7 +74,17 @@ public static class UpdateService
         using (var client = new HttpClient())
         {
             client.DefaultRequestHeaders.UserAgent.ParseAdd("D2RDS-Updater");
-            var data = await client.GetByteArrayAsync(update.DownloadUrl);
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                if (!string.IsNullOrWhiteSpace(update.ApiDownloadUrl))
+                    client.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
+            }
+
+            var url = !string.IsNullOrWhiteSpace(token) && !string.IsNullOrWhiteSpace(update.ApiDownloadUrl)
+                ? update.ApiDownloadUrl
+                : update.DownloadUrl;
+            var data = await client.GetByteArrayAsync(url);
             await File.WriteAllBytesAsync(zipPath, data);
         }
 
