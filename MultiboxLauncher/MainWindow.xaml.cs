@@ -7,6 +7,8 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Forms;
+using System.Drawing;
 
 namespace MultiboxLauncher;
 
@@ -19,6 +21,7 @@ public partial class MainWindow : Window
     private readonly BroadcastManager _broadcastManager;
     private BroadcastStatusWindow? _broadcastStatusWindow;
     private bool _broadcastInitialized;
+    private NotifyIcon? _trayIcon;
 
     public MainWindow()
     {
@@ -64,7 +67,7 @@ public partial class MainWindow : Window
             }
             LoadButtons();
         };
-        StateChanged += (_, _) => EnsureOverlayVisible();
+        StateChanged += (_, _) => HandleMinimizeToTray();
     }
 
     private void SetStatus(string text) => TxtStatus.Text = text;
@@ -78,6 +81,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _broadcastStatusWindow?.Close();
+        _trayIcon?.Dispose();
         _broadcastManager.Dispose();
         base.OnClosed(e);
         System.Windows.Application.Current.Shutdown();
@@ -575,17 +579,64 @@ public partial class MainWindow : Window
 
     private void ApplyMinimizeBehavior()
     {
-        if (_config.MinimizeToTaskbar)
+        // Keep normal window style; minimize behavior handled in StateChanged.
+        WindowStyle = WindowStyle.SingleBorderWindow;
+        ShowInTaskbar = true;
+    }
+
+    private void HandleMinimizeToTray()
+    {
+        EnsureOverlayVisible();
+        if (!_config.MinimizeToTaskbar)
+            return;
+
+        if (WindowState == WindowState.Minimized)
         {
-            // Keep out of Alt+Tab while still visible in taskbar.
-            WindowStyle = WindowStyle.ToolWindow;
-            ShowInTaskbar = true;
+            ShowInTaskbar = false;
+            Hide();
+            EnsureTrayIcon();
+            _trayIcon!.Visible = true;
         }
         else
         {
-            WindowStyle = WindowStyle.SingleBorderWindow;
             ShowInTaskbar = true;
+            if (_trayIcon is not null)
+                _trayIcon.Visible = false;
         }
+    }
+
+    private void EnsureTrayIcon()
+    {
+        if (_trayIcon is not null)
+            return;
+
+        var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "assets", "app.ico");
+        var icon = System.IO.File.Exists(iconPath)
+            ? new System.Drawing.Icon(iconPath)
+            : System.Drawing.Icon.ExtractAssociatedIcon(System.Diagnostics.Process.GetCurrentProcess().MainModule!.FileName);
+
+        _trayIcon = new NotifyIcon
+        {
+            Icon = icon,
+            Text = "D2RDS",
+            Visible = false
+        };
+
+        _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Restore", null, (_, _) => RestoreFromTray());
+        menu.Items.Add("Exit", null, (_, _) => Close());
+        _trayIcon.ContextMenuStrip = menu;
+    }
+
+    private void RestoreFromTray()
+    {
+        ShowInTaskbar = true;
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+        if (_trayIcon is not null)
+            _trayIcon.Visible = false;
     }
 
     private IReadOnlyList<IntPtr> GetBroadcastTargets()
