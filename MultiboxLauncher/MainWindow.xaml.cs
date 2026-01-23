@@ -337,6 +337,13 @@ public partial class MainWindow : Window
             return;
 
         var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+        if (key == System.Windows.Input.Key.Enter)
+        {
+            e.Handled = true;
+            SaveBroadcastSettings();
+            box.MoveFocus(new System.Windows.Input.TraversalRequest(System.Windows.Input.FocusNavigationDirection.Next));
+            return;
+        }
         if (IsModifierKey(key))
         {
             e.Handled = true;
