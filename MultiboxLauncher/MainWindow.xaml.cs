@@ -39,6 +39,8 @@ public partial class MainWindow : Window
         TxtInstallPath.LostFocus += (_, _) => SaveInstallPath();
         ChkLockOrder.Checked += (_, _) => SaveLockOrder(true);
         ChkLockOrder.Unchecked += (_, _) => SaveLockOrder(false);
+        ChkMinimizeToTaskbar.Checked += (_, _) => SaveMinimizeToTaskbar(true);
+        ChkMinimizeToTaskbar.Unchecked += (_, _) => SaveMinimizeToTaskbar(false);
         ChkBroadcastEnabled.Checked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastEnabled.Unchecked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastAll.Checked += (_, _) => SaveBroadcastSettings();
@@ -62,6 +64,7 @@ public partial class MainWindow : Window
             }
             LoadButtons();
         };
+        StateChanged += (_, _) => EnsureOverlayVisible();
     }
 
     private void SetStatus(string text) => TxtStatus.Text = text;
@@ -219,6 +222,7 @@ public partial class MainWindow : Window
 
         TxtInstallPath.Text = _config.InstallPath;
         ChkLockOrder.IsChecked = _config.LockOrder;
+        ChkMinimizeToTaskbar.IsChecked = _config.MinimizeToTaskbar;
         ChkBroadcastEnabled.IsChecked = _config.Broadcast.Enabled;
         ChkBroadcastAll.IsChecked = _config.Broadcast.BroadcastAll;
         ChkBroadcastKeyboard.IsChecked = _config.Broadcast.Keyboard;
@@ -232,6 +236,7 @@ public partial class MainWindow : Window
 
         EnsureBroadcastStatusWindow();
         UpdateBroadcastStatusWindow();
+        ApplyMinimizeBehavior();
     }
 
     private void EnsureRegionSelected()
@@ -306,6 +311,13 @@ public partial class MainWindow : Window
         _config.LockOrder = locked;
         ConfigLoader.Save(_config);
         LoadButtons();
+    }
+
+    private void SaveMinimizeToTaskbar(bool enabled)
+    {
+        _config.MinimizeToTaskbar = enabled;
+        ConfigLoader.Save(_config);
+        ApplyMinimizeBehavior();
     }
 
     private void SaveBroadcastSettings()
@@ -541,7 +553,6 @@ public partial class MainWindow : Window
 
         _broadcastStatusWindow = new BroadcastStatusWindow
         {
-            Owner = this,
             ShowActivated = false
         };
         _broadcastStatusWindow.Show();
@@ -550,6 +561,31 @@ public partial class MainWindow : Window
     private void UpdateBroadcastStatusWindow()
     {
         _broadcastStatusWindow?.UpdateStatus(_config.Broadcast);
+    }
+
+    private void EnsureOverlayVisible()
+    {
+        if (_broadcastStatusWindow is null)
+            return;
+
+        if (!_broadcastStatusWindow.IsVisible)
+            _broadcastStatusWindow.Show();
+        _broadcastStatusWindow.Topmost = true;
+    }
+
+    private void ApplyMinimizeBehavior()
+    {
+        if (_config.MinimizeToTaskbar)
+        {
+            // Keep out of Alt+Tab while still visible in taskbar.
+            WindowStyle = WindowStyle.ToolWindow;
+            ShowInTaskbar = true;
+        }
+        else
+        {
+            WindowStyle = WindowStyle.SingleBorderWindow;
+            ShowInTaskbar = true;
+        }
     }
 
     private IReadOnlyList<IntPtr> GetBroadcastTargets()

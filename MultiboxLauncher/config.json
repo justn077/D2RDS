@@ -17,5 +17,6 @@
     "defaultsApplied": true
   },
   "updateToken": "",
+  "minimizeToTaskbar": false,
   "accounts": []
 }

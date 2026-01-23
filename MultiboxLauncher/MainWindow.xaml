@@ -96,6 +96,8 @@
                     <Button Name="BtnUpdate" Width="120">Update D2RDS</Button>
                     <CheckBox Name="ChkLockOrder" Margin="0,0,12,0"
                               ToolTip="Prevents reordering accounts with Up/Down.">Lock order</CheckBox>
+                    <CheckBox Name="ChkMinimizeToTaskbar" Margin="0,0,12,0"
+                              ToolTip="Keep D2RDS running but hidden from Alt+Tab when minimized.">Minimize to taskbar</CheckBox>
                     <TextBlock Name="TxtStatus" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
                     <TextBlock Name="TxtVersion" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="12,0,0,0"/>
                 </StackPanel>

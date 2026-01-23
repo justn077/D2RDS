@@ -19,6 +19,7 @@ public sealed class LauncherConfig
     public bool LockOrder { get; set; } = false;
     public BroadcastSettings Broadcast { get; set; } = new();
     public string UpdateToken { get; set; } = "";
+    public bool MinimizeToTaskbar { get; set; } = false;
 
     public void Normalize()
     {

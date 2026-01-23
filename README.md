@@ -73,6 +73,7 @@ Example `config.json`:
     "toggleWindowHotkey": "Ctrl+Alt+N",
     "defaultsApplied": true
   },
+  "minimizeToTaskbar": false,
   "accounts": [
     {
       "id": "a1b2c3",
