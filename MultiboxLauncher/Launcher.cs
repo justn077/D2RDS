@@ -28,6 +28,13 @@ public sealed class LauncherConfig
         Accounts ??= new List<AccountProfile>();
         Profiles ??= new List<LaunchProfile>();
         Broadcast ??= new BroadcastSettings();
+        if (!Broadcast.DefaultsApplied)
+        {
+            // Ensure keyboard/mouse default on for existing configs once.
+            Broadcast.Keyboard = true;
+            Broadcast.Mouse = true;
+            Broadcast.DefaultsApplied = true;
+        }
         UpdateToken ??= "";
     }
 }
@@ -56,6 +63,7 @@ public sealed class BroadcastSettings
     public string ToggleBroadcastHotkey { get; set; } = "Ctrl+Alt+B";
     public string ToggleModeHotkey { get; set; } = "Ctrl+Alt+M";
     public string ToggleWindowHotkey { get; set; } = "Ctrl+Alt+N";
+    public bool DefaultsApplied { get; set; } = false;
 }
 
 public sealed class LaunchProfile

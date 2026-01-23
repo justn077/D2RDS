@@ -70,7 +70,8 @@ Example `config.json`:
     "mouse": true,
     "toggleBroadcastHotkey": "Ctrl+Alt+B",
     "toggleModeHotkey": "Ctrl+Alt+M",
-    "toggleWindowHotkey": "Ctrl+Alt+N"
+    "toggleWindowHotkey": "Ctrl+Alt+N",
+    "defaultsApplied": true
   },
   "accounts": [
     {
