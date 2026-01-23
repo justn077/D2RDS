@@ -28,7 +28,7 @@ public sealed class LauncherConfig
         Accounts ??= new List<AccountProfile>();
         Profiles ??= new List<LaunchProfile>();
         Broadcast ??= new BroadcastSettings();
-        if (!Broadcast.DefaultsApplied || (!Broadcast.Keyboard && !Broadcast.Mouse))
+        if (!Broadcast.DefaultsApplied || !Broadcast.Keyboard || !Broadcast.Mouse)
         {
             // Ensure keyboard/mouse default on for existing configs.
             Broadcast.Keyboard = true;
