@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms;
 using System.Drawing;
+using Microsoft.Win32;
 
 namespace MultiboxLauncher;
 
@@ -499,7 +500,13 @@ public partial class MainWindow : Window
     private void ToggleAccountBroadcast(AccountProfile account, bool enabled)
     {
         account.BroadcastEnabled = enabled;
+        if (_config.Broadcast.BroadcastAll && _config.Accounts.Any(a => !a.BroadcastEnabled))
+        {
+            _config.Broadcast.BroadcastAll = false;
+            ChkBroadcastAll.IsChecked = false;
+        }
         ConfigLoader.Save(_config);
+        UpdateBroadcastStatusWindow();
     }
 
     private void ToggleBroadcastEnabled()
@@ -760,6 +767,15 @@ public partial class MainWindow : Window
                 }
             }
 
+            if (!TryClearStaleD2RProcesses())
+                return;
+
+            if (!ProcessLauncher.IsProcessRunning("D2R"))
+            {
+                if (!EnsureBattleNetRunning())
+                    return;
+            }
+
             // Pre-launch only applies once a D2R process exists; skip for the first instance.
             if (config.PreLaunch.Enabled && !string.IsNullOrWhiteSpace(config.PreLaunch.Path))
             {
@@ -810,6 +826,91 @@ public partial class MainWindow : Window
         {
             SetBusy(false);
         }
+    }
+
+    private bool EnsureBattleNetRunning()
+    {
+        if (ProcessLauncher.IsProcessRunning("Battle.net"))
+            return true;
+
+        var path = _config.BattleNetPath;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            path = Defaults.FindBattleNetPath();
+
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            var pick = System.Windows.MessageBox.Show("Battle.net is not running. Select Battle.net.exe now?", "Battle.net required", MessageBoxButton.YesNo);
+            if (pick != MessageBoxResult.Yes)
+                return false;
+
+            var dialog = new OpenFileDialog
+            {
+                Title = "Select Battle.net.exe",
+                Filter = "Battle.net|Battle.net.exe|Executable|*.exe",
+                CheckFileExists = true
+            };
+
+            if (dialog.ShowDialog() != true)
+                return false;
+
+            path = dialog.FileName;
+            _config.BattleNetPath = path;
+            ConfigLoader.Save(_config);
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"Failed to start Battle.net: {ex.Message}", "Battle.net error");
+            return false;
+        }
+    }
+
+    private static bool TryClearStaleD2RProcesses()
+    {
+        var stale = Process.GetProcessesByName("D2R")
+            .Where(proc =>
+            {
+                try
+                {
+                    if (proc.HasExited)
+                        return false;
+                    if (proc.MainWindowHandle != IntPtr.Zero)
+                        return false;
+                    return ProcessLauncher.TryGetMainWindowHandle(proc.Id) == IntPtr.Zero;
+                }
+                catch
+                {
+                    return false;
+                }
+            })
+            .ToList();
+
+        if (stale.Count == 0)
+            return true;
+
+        var pick = System.Windows.MessageBox.Show(
+            $"Found {stale.Count} D2R process(es) without a window. Close them so we can launch?",
+            "Stale D2R detected",
+            MessageBoxButton.YesNo);
+        if (pick != MessageBoxResult.Yes)
+            return false;
+
+        foreach (var proc in stale)
+        {
+            try { proc.Kill(true); }
+            catch { }
+        }
+
+        return true;
     }
 
     private static string BuildLaunchArguments(string email, string password, string address)
