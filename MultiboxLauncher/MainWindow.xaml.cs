@@ -9,7 +9,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms;
 using System.Drawing;
-using Microsoft.Win32;
 
 namespace MultiboxLauncher;
 
@@ -843,7 +842,7 @@ public partial class MainWindow : Window
             if (pick != MessageBoxResult.Yes)
                 return false;
 
-            var dialog = new OpenFileDialog
+            var dialog = new Microsoft.Win32.OpenFileDialog
             {
                 Title = "Select Battle.net.exe",
                 Filter = "Battle.net|Battle.net.exe|Executable|*.exe",
