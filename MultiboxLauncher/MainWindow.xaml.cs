@@ -552,18 +552,23 @@ public partial class MainWindow : Window
 
     private void EnsureBroadcastStatusWindow()
     {
-        if (_broadcastStatusWindow is not null)
-            return;
-
-        _broadcastStatusWindow = new BroadcastStatusWindow
+        if (_broadcastStatusWindow is null)
         {
-            ShowActivated = false
-        };
-        _broadcastStatusWindow.Show();
+            _broadcastStatusWindow = new BroadcastStatusWindow
+            {
+                ShowActivated = false
+            };
+            _broadcastStatusWindow.Closed += (_, _) => _broadcastStatusWindow = null;
+        }
+
+        if (!_broadcastStatusWindow.IsVisible)
+            _broadcastStatusWindow.Show();
+        _broadcastStatusWindow.Topmost = true;
     }
 
     private void UpdateBroadcastStatusWindow()
     {
+        EnsureBroadcastStatusWindow();
         _broadcastStatusWindow?.UpdateStatus(_config.Broadcast);
     }
 
