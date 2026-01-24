@@ -327,7 +327,13 @@ public partial class MainWindow : Window
     private void SaveBroadcastSettings()
     {
         _config.Broadcast.Enabled = ChkBroadcastEnabled.IsChecked == true;
-        _config.Broadcast.BroadcastAll = ChkBroadcastAll.IsChecked == true;
+        var broadcastAll = ChkBroadcastAll.IsChecked == true;
+        _config.Broadcast.BroadcastAll = broadcastAll;
+        if (broadcastAll)
+        {
+            foreach (var account in _config.Accounts)
+                account.BroadcastEnabled = true;
+        }
         _config.Broadcast.Keyboard = ChkBroadcastKeyboard.IsChecked == true;
         _config.Broadcast.Mouse = ChkBroadcastMouse.IsChecked == true;
 
@@ -345,6 +351,8 @@ public partial class MainWindow : Window
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
         UpdateBroadcastStatusWindow();
+        if (broadcastAll)
+            LoadButtons();
     }
 
     private void OnHotkeyBoxKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -552,8 +560,14 @@ public partial class MainWindow : Window
             return;
 
         account.BroadcastEnabled = !account.BroadcastEnabled;
+        if (_config.Broadcast.BroadcastAll && _config.Accounts.Any(a => !a.BroadcastEnabled))
+            _config.Broadcast.BroadcastAll = false;
         ConfigLoader.Save(_config);
-        Dispatcher.Invoke(LoadButtons);
+        Dispatcher.Invoke(() =>
+        {
+            LoadButtons();
+            UpdateBroadcastStatusWindow();
+        });
     }
 
     private void EnsureBroadcastStatusWindow()
@@ -567,9 +581,7 @@ public partial class MainWindow : Window
             _broadcastStatusWindow.Closed += (_, _) => _broadcastStatusWindow = null;
         }
 
-        if (!_broadcastStatusWindow.IsVisible)
-            _broadcastStatusWindow.Show();
-        _broadcastStatusWindow.Topmost = true;
+        _broadcastStatusWindow.EnsureVisible();
     }
 
     private void UpdateBroadcastStatusWindow()
@@ -766,15 +778,6 @@ public partial class MainWindow : Window
                 }
             }
 
-            if (!TryClearStaleD2RProcesses())
-                return;
-
-            if (!ProcessLauncher.IsProcessRunning("D2R"))
-            {
-                if (!EnsureBattleNetRunning())
-                    return;
-            }
-
             // Pre-launch only applies once a D2R process exists; skip for the first instance.
             if (config.PreLaunch.Enabled && !string.IsNullOrWhiteSpace(config.PreLaunch.Path))
             {
@@ -825,91 +828,6 @@ public partial class MainWindow : Window
         {
             SetBusy(false);
         }
-    }
-
-    private bool EnsureBattleNetRunning()
-    {
-        if (ProcessLauncher.IsProcessRunning("Battle.net"))
-            return true;
-
-        var path = _config.BattleNetPath;
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            path = Defaults.FindBattleNetPath();
-
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-        {
-            var pick = System.Windows.MessageBox.Show("Battle.net is not running. Select Battle.net.exe now?", "Battle.net required", MessageBoxButton.YesNo);
-            if (pick != MessageBoxResult.Yes)
-                return false;
-
-            var dialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = "Select Battle.net.exe",
-                Filter = "Battle.net|Battle.net.exe|Executable|*.exe",
-                CheckFileExists = true
-            };
-
-            if (dialog.ShowDialog() != true)
-                return false;
-
-            path = dialog.FileName;
-            _config.BattleNetPath = path;
-            ConfigLoader.Save(_config);
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = path,
-                UseShellExecute = true
-            });
-            return true;
-        }
-        catch (Exception ex)
-        {
-            System.Windows.MessageBox.Show($"Failed to start Battle.net: {ex.Message}", "Battle.net error");
-            return false;
-        }
-    }
-
-    private static bool TryClearStaleD2RProcesses()
-    {
-        var stale = Process.GetProcessesByName("D2R")
-            .Where(proc =>
-            {
-                try
-                {
-                    if (proc.HasExited)
-                        return false;
-                    if (proc.MainWindowHandle != IntPtr.Zero)
-                        return false;
-                    return ProcessLauncher.TryGetMainWindowHandle(proc.Id) == IntPtr.Zero;
-                }
-                catch
-                {
-                    return false;
-                }
-            })
-            .ToList();
-
-        if (stale.Count == 0)
-            return true;
-
-        var pick = System.Windows.MessageBox.Show(
-            $"Found {stale.Count} D2R process(es) without a window. Close them so we can launch?",
-            "Stale D2R detected",
-            MessageBoxButton.YesNo);
-        if (pick != MessageBoxResult.Yes)
-            return false;
-
-        foreach (var proc in stale)
-        {
-            try { proc.Kill(true); }
-            catch { }
-        }
-
-        return true;
     }
 
     private static string BuildLaunchArguments(string email, string password, string address)

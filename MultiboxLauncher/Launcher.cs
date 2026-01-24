@@ -19,7 +19,6 @@ public sealed class LauncherConfig
     public bool LockOrder { get; set; } = false;
     public BroadcastSettings Broadcast { get; set; } = new();
     public string UpdateToken { get; set; } = "";
-    public string BattleNetPath { get; set; } = "";
     public bool MinimizeToTaskbar { get; set; } = false;
 
     public void Normalize()
@@ -38,13 +37,6 @@ public sealed class LauncherConfig
             Broadcast.DefaultsApplied = true;
         }
         UpdateToken ??= "";
-        BattleNetPath ??= "";
-        if (string.IsNullOrWhiteSpace(BattleNetPath))
-        {
-            var defaultPath = Defaults.FindBattleNetPath();
-            if (!string.IsNullOrWhiteSpace(defaultPath))
-                BattleNetPath = defaultPath;
-        }
     }
 }
 
@@ -500,22 +492,6 @@ public static class ProcessLauncher
 public static class Defaults
 {
     public const string DefaultInstallPath = @"C:\Program Files (x86)\Diablo II Resurrected";
-
-    public static string? FindBattleNetPath()
-    {
-        var candidates = new[]
-        {
-            @"C:\\Program Files (x86)\\Battle.net\\Battle.net.exe",
-            @"C:\\Program Files\\Battle.net\\Battle.net.exe"
-        };
-
-        foreach (var path in candidates)
-        {
-            if (File.Exists(path))
-                return path;
-        }
-        return null;
-    }
 }
 
 public static class RegionOptions

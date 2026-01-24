@@ -12,6 +12,15 @@ public partial class BroadcastStatusWindow : Window
         Loaded += (_, _) => PositionNearTopLeft();
     }
 
+    public void EnsureVisible()
+    {
+        if (!IsVisible)
+            Show();
+        Topmost = true;
+        if (WindowStartupLocation == WindowStartupLocation.Manual)
+            PositionNearTopLeft();
+    }
+
     public void UpdateStatus(BroadcastSettings settings)
     {
         var mode = settings.BroadcastAll ? "All" : "Selected";
