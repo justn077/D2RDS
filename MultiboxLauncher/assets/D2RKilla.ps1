@@ -1,12 +1,18 @@
 # D2R mutex handle cleanup (pre-launch helper)
 # Must run as Administrator
 if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs -Wait
     exit
 }
 
-# Path to handle64.exe
-$handlePath = "C:\Users\justn\JotterPrograms\Handle\handle64.exe"
+# Path to handle64.exe (must be placed next to D2RDS.exe)
+$appRoot = Split-Path -Parent $PSScriptRoot
+$handlePath = Join-Path $appRoot "handle64.exe"
+if (!(Test-Path $handlePath)) {
+    Write-Host "handle64.exe not found at: $handlePath" -ForegroundColor Red
+    Write-Host "Download Sysinternals Handle and place handle64.exe next to D2RDS.exe." -ForegroundColor Yellow
+    exit 1
+}
 
 Write-Host "Searching for all D2R handles..." -ForegroundColor Cyan
 
@@ -48,5 +54,3 @@ foreach($handle in $handlesToKill) {
 }
 
 Write-Host "`nDone! All handles killed. You can now launch your next D2R instance." -ForegroundColor Green
-Write-Host "`nPress any key to exit..."
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

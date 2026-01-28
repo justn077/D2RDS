@@ -151,6 +151,10 @@
                              ToolTip="Global hotkey to toggle broadcast for the active D2R window (default: Ctrl+Alt+N)."/>
                 </StackPanel>
                 </Grid>
+
+                <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap">
+                    First launch: open one D2R account normally (Battle.net). Use D2RDS to launch the others. Broadcasting works for all windows; treat the manually launched D2R as your "driver" window since it can't be singled out yet.
+                </TextBlock>
             </StackPanel>
         </Border>
 
@@ -162,6 +166,7 @@
                         <ColumnDefinition Width="220"/>
                         <ColumnDefinition Width="200"/>
                         <ColumnDefinition Width="70"/>
+                        <ColumnDefinition Width="80"/>
                         <ColumnDefinition Width="70"/>
                         <ColumnDefinition Width="70"/>
                         <ColumnDefinition Width="55"/>
@@ -170,10 +175,11 @@
                     <TextBlock Grid.Column="0" Text="Launch" Foreground="{StaticResource MutedBrush}"/>
                     <TextBlock Grid.Column="1" Text="Account" Foreground="{StaticResource MutedBrush}"/>
                     <TextBlock Grid.Column="2" Text="Bcast" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="3" Text="Edit" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="4" Text="Delete" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="5" Text="Up" Foreground="{StaticResource MutedBrush}"/>
-                    <TextBlock Grid.Column="6" Text="Down" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="3" Text="Classic" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="4" Text="Edit" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="5" Text="Delete" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="6" Text="Up" Foreground="{StaticResource MutedBrush}"/>
+                    <TextBlock Grid.Column="7" Text="Down" Foreground="{StaticResource MutedBrush}"/>
                 </Grid>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Name="ProfilesPanel" />

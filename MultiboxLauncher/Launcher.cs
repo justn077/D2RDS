@@ -53,6 +53,7 @@ public sealed class AccountProfile
     public string Email { get; set; } = "";
     public string CredentialId { get; set; } = "";
     public bool BroadcastEnabled { get; set; } = true;
+    public bool ClassicMode { get; set; } = false;
 }
 
 public sealed class BroadcastSettings
@@ -164,6 +165,22 @@ public static class ShortcutResolver
 
 public static class ProcessLauncher
 {
+    private const int SwRestore = 9;
+    private const string HandleExeName = "handle64.exe";
+    private const string D2RKillaScriptName = "D2RKilla.ps1";
+    private const uint MonitorDefaultToNearest = 2;
+    private const int GwlStyle = -16;
+    private const int SwpNoZOrder = 0x0004;
+    private const int SwpNoActivate = 0x0010;
+    private const int SwpFrameChanged = 0x0020;
+    private const uint WsCaption = 0x00C00000;
+    private const uint WsThickFrame = 0x00040000;
+    private const uint WsMaximizeBox = 0x00010000;
+    public const int DefaultMonitorCheckIntervalMs = 750;
+    public const int DefaultMoveDebounceMs = 500;
+
+    public static string DefaultHandlePath => System.IO.Path.Combine(AppContext.BaseDirectory, HandleExeName);
+
     public static Task RunPreLaunchAsync(string path)
     {
         return Task.Run(() => StartAndWait(path));
@@ -200,6 +217,34 @@ public static class ProcessLauncher
         }
     }
 
+    public static void TryActivateExistingInstance()
+    {
+        try
+        {
+            var current = Process.GetCurrentProcess();
+            var name = current.ProcessName;
+            foreach (var process in Process.GetProcessesByName(name))
+            {
+                if (process.Id == current.Id)
+                    continue;
+
+                var handle = process.MainWindowHandle;
+                if (handle == IntPtr.Zero)
+                    handle = TryGetMainWindowHandle(process.Id);
+                if (handle == IntPtr.Zero)
+                    continue;
+
+                ShowWindow(handle, SwRestore);
+                SetForegroundWindow(handle);
+                return;
+            }
+        }
+        catch
+        {
+            // Best-effort only; ignore failures.
+        }
+    }
+
     public static bool TryValidatePreLaunchPath(string path, out string error)
     {
         error = "";
@@ -229,6 +274,39 @@ public static class ProcessLauncher
         }
 
         return true;
+    }
+
+    public static string? TryResolvePreLaunchScript(string configuredPath)
+    {
+        var expanded = PathTokens.Expand(configuredPath);
+        if (!File.Exists(expanded))
+            return null;
+
+        if (System.IO.Path.GetExtension(expanded).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+            return expanded;
+
+        if (System.IO.Path.GetExtension(expanded).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var resolved = ShortcutResolver.Resolve(expanded);
+                if (System.IO.Path.GetExtension(resolved.TargetPath).Equals(".ps1", StringComparison.OrdinalIgnoreCase))
+                    return resolved.TargetPath;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    public static bool IsD2RKillaScript(string? scriptPath)
+    {
+        if (string.IsNullOrWhiteSpace(scriptPath))
+            return false;
+        return string.Equals(System.IO.Path.GetFileName(scriptPath), D2RKillaScriptName, StringComparison.OrdinalIgnoreCase);
     }
 
     public static async Task TrySetWindowTitleAsync(Process? process, string title, int timeoutMs = 10000, int pollMs = 200)
@@ -261,6 +339,35 @@ public static class ProcessLauncher
         }
     }
 
+    public static async Task<IntPtr> WaitForMainWindowHandleAsync(Process? process, int timeoutMs = 10000, int pollMs = 200)
+    {
+        if (process is null)
+            return IntPtr.Zero;
+
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                if (process.HasExited)
+                    return IntPtr.Zero;
+
+                process.Refresh();
+                var handle = process.MainWindowHandle;
+                if (handle != IntPtr.Zero)
+                    return handle;
+
+                await Task.Delay(pollMs);
+            }
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+
+        return IntPtr.Zero;
+    }
+
     public static IReadOnlyList<IntPtr> GetMainWindowHandlesByProcessName(string processName)
     {
         var results = new List<IntPtr>();
@@ -284,6 +391,75 @@ public static class ProcessLauncher
         }
 
         return results;
+    }
+
+    public static IntPtr GetMonitorHandle(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return IntPtr.Zero;
+        return MonitorFromWindow(hwnd, MonitorDefaultToNearest);
+    }
+
+    public static bool TryGetWindowRect(IntPtr hwnd, out Rect rect)
+    {
+        rect = new Rect();
+        if (hwnd == IntPtr.Zero)
+            return false;
+        return GetWindowRect(hwnd, out rect);
+    }
+
+    public static bool TryGetMonitorWorkArea(IntPtr hwnd, out Rect workArea)
+    {
+        workArea = new Rect();
+        var monitor = GetMonitorHandle(hwnd);
+        if (monitor == IntPtr.Zero)
+            return false;
+
+        var info = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info))
+            return false;
+
+        workArea = info.rcWork;
+        return true;
+    }
+
+    public static void FitWindowToMonitorWorkArea(IntPtr hwnd)
+    {
+        if (!TryGetMonitorWorkArea(hwnd, out var workArea))
+            return;
+
+        var width = workArea.Right - workArea.Left;
+        var height = workArea.Bottom - workArea.Top;
+        if (width <= 0 || height <= 0)
+            return;
+
+        SetWindowPos(hwnd, IntPtr.Zero, workArea.Left, workArea.Top, width, height, SwpNoZOrder | SwpNoActivate);
+    }
+
+    public static void TryApplyBorderlessStyle(IntPtr hwnd, bool allowResize)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        var style = GetWindowLongPtr(hwnd, GwlStyle);
+        if (style == IntPtr.Zero)
+            return;
+
+        var styleValue = unchecked((uint)style.ToInt64());
+        styleValue &= ~WsCaption;
+        if (allowResize)
+        {
+            styleValue |= WsThickFrame;
+            styleValue |= WsMaximizeBox;
+        }
+        else
+        {
+            styleValue &= ~WsThickFrame;
+            styleValue &= ~WsMaximizeBox;
+        }
+
+        SetWindowLongPtr(hwnd, GwlStyle, new IntPtr(unchecked((int)styleValue)));
+        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
     }
 
     public static IntPtr TryGetMainWindowHandle(int processId)
@@ -465,8 +641,32 @@ public static class ProcessLauncher
         return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int cbSize;
+        public Rect rcMonitor;
+        public Rect rcWork;
+        public int dwFlags;
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool SetWindowText(IntPtr hWnd, string lpString);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
@@ -487,6 +687,24 @@ public static class ProcessLauncher
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out Rect lpRect);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, int uFlags);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 }
 
 public static class Defaults

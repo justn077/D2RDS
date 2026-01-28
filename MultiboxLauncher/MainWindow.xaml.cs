@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms;
 using System.Drawing;
+using System.Windows.Threading;
 
 namespace MultiboxLauncher;
 
@@ -22,6 +23,17 @@ public partial class MainWindow : Window
     private BroadcastStatusWindow? _broadcastStatusWindow;
     private bool _broadcastInitialized;
     private NotifyIcon? _trayIcon;
+    private readonly DispatcherTimer _monitorTimer = new();
+    private bool _monitorTrackingInitialized;
+    private readonly Dictionary<string, WindowMonitorState> _windowMonitorStates = new();
+    private const bool BorderlessResizableDefault = true;
+
+    private sealed class WindowMonitorState
+    {
+        public IntPtr Monitor { get; set; }
+        public ProcessLauncher.Rect LastRect { get; set; }
+        public DateTime LastMoveUtc { get; set; } = DateTime.UtcNow;
+    }
 
     public MainWindow()
     {
@@ -29,7 +41,8 @@ public partial class MainWindow : Window
         _broadcastManager = new BroadcastManager(
             () => _config.Broadcast,
             GetBroadcastTargets,
-            IsForegroundD2R);
+            IsForegroundD2R,
+            IsClassicModeWindow);
         _broadcastManager.ToggleBroadcastRequested += ToggleBroadcastEnabled;
         _broadcastManager.ToggleModeRequested += ToggleBroadcastMode;
         _broadcastManager.ToggleWindowRequested += ToggleBroadcastForForegroundWindow;
@@ -58,6 +71,7 @@ public partial class MainWindow : Window
         TxtBroadcastHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
         TxtBroadcastModeHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
         TxtBroadcastWindowHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
+        _monitorTimer.Tick += (_, _) => TrackWindowMonitors();
         Loaded += (_, _) =>
         {
             if (!_broadcastInitialized)
@@ -120,6 +134,7 @@ public partial class MainWindow : Window
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(220) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(200) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(80) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(55) });
@@ -155,6 +170,18 @@ public partial class MainWindow : Window
                 broadcastToggle.Unchecked += (_, _) => ToggleAccountBroadcast(account, false);
                 System.Windows.Controls.Grid.SetColumn(broadcastToggle, 2);
 
+                var classicToggle = new System.Windows.Controls.CheckBox
+                {
+                    Content = "Classic",
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    IsChecked = account.ClassicMode,
+                    ToolTip = "Assume classic 4:3 viewport for mouse broadcast scaling."
+                };
+                classicToggle.Checked += (_, _) => ToggleAccountClassic(account, true);
+                classicToggle.Unchecked += (_, _) => ToggleAccountClassic(account, false);
+                System.Windows.Controls.Grid.SetColumn(classicToggle, 3);
+
                 var editButton = new System.Windows.Controls.Button
                 {
                     Content = "Edit",
@@ -163,7 +190,7 @@ public partial class MainWindow : Window
                     Margin = new Thickness(0)
                 };
                 editButton.Click += (_, _) => EditAccount(account);
-                System.Windows.Controls.Grid.SetColumn(editButton, 3);
+                System.Windows.Controls.Grid.SetColumn(editButton, 4);
 
                 var deleteButton = new System.Windows.Controls.Button
                 {
@@ -173,7 +200,7 @@ public partial class MainWindow : Window
                     Margin = new Thickness(0)
                 };
                 deleteButton.Click += (_, _) => DeleteAccount(account);
-                System.Windows.Controls.Grid.SetColumn(deleteButton, 4);
+                System.Windows.Controls.Grid.SetColumn(deleteButton, 5);
 
                 var upButton = new System.Windows.Controls.Button
                 {
@@ -184,7 +211,7 @@ public partial class MainWindow : Window
                     IsEnabled = !_config.LockOrder && i > 0
                 };
                 upButton.Click += (_, _) => MoveAccount(account, -1);
-                System.Windows.Controls.Grid.SetColumn(upButton, 5);
+                System.Windows.Controls.Grid.SetColumn(upButton, 6);
 
                 var downButton = new System.Windows.Controls.Button
                 {
@@ -195,11 +222,12 @@ public partial class MainWindow : Window
                     IsEnabled = !_config.LockOrder && i < _config.Accounts.Count - 1
                 };
                 downButton.Click += (_, _) => MoveAccount(account, 1);
-                System.Windows.Controls.Grid.SetColumn(downButton, 6);
+                System.Windows.Controls.Grid.SetColumn(downButton, 7);
 
                 row.Children.Add(launchButton);
                 row.Children.Add(emailText);
                 row.Children.Add(broadcastToggle);
+                row.Children.Add(classicToggle);
                 row.Children.Add(editButton);
                 row.Children.Add(deleteButton);
                 row.Children.Add(upButton);
@@ -241,6 +269,7 @@ public partial class MainWindow : Window
         EnsureBroadcastStatusWindow();
         UpdateBroadcastStatusWindow();
         ApplyMinimizeBehavior();
+        ConfigureMonitorTracking();
     }
 
     private void EnsureRegionSelected()
@@ -516,6 +545,12 @@ public partial class MainWindow : Window
         UpdateBroadcastStatusWindow();
     }
 
+    private void ToggleAccountClassic(AccountProfile account, bool enabled)
+    {
+        account.ClassicMode = enabled;
+        ConfigLoader.Save(_config);
+    }
+
     private void ToggleBroadcastEnabled()
     {
         _config.Broadcast.Enabled = !_config.Broadcast.Enabled;
@@ -667,33 +702,127 @@ public partial class MainWindow : Window
             _trayIcon.Visible = false;
     }
 
-    private IReadOnlyList<IntPtr> GetBroadcastTargets()
+    private void ConfigureMonitorTracking()
+    {
+        if (!_monitorTrackingInitialized)
+        {
+            _monitorTrackingInitialized = true;
+        }
+
+        _monitorTimer.Interval = TimeSpan.FromMilliseconds(ProcessLauncher.DefaultMonitorCheckIntervalMs);
+        _monitorTimer.Start();
+    }
+
+    private void TrackWindowMonitors()
+    {
+        var debounceMs = ProcessLauncher.DefaultMoveDebounceMs;
+
+        foreach (var kvp in _accountProcessIds)
+        {
+            var accountId = kvp.Key;
+            var pid = kvp.Value;
+            var hwnd = ProcessLauncher.TryGetMainWindowHandle(pid);
+            if (hwnd == IntPtr.Zero)
+                continue;
+
+            var monitor = ProcessLauncher.GetMonitorHandle(hwnd);
+            if (monitor == IntPtr.Zero)
+                continue;
+
+            if (!ProcessLauncher.TryGetWindowRect(hwnd, out var rect))
+                continue;
+
+            if (!_windowMonitorStates.TryGetValue(accountId, out var state))
+            {
+                _windowMonitorStates[accountId] = new WindowMonitorState
+                {
+                    Monitor = monitor,
+                    LastRect = rect,
+                    LastMoveUtc = DateTime.UtcNow
+                };
+                continue;
+            }
+
+            if (!RectEquals(state.LastRect, rect))
+            {
+                state.LastRect = rect;
+                state.LastMoveUtc = DateTime.UtcNow;
+            }
+
+            if (monitor != state.Monitor)
+            {
+                var elapsed = DateTime.UtcNow - state.LastMoveUtc;
+                if (elapsed.TotalMilliseconds >= debounceMs)
+                {
+                    state.Monitor = monitor;
+                    ProcessLauncher.FitWindowToMonitorWorkArea(hwnd);
+                }
+            }
+        }
+    }
+
+    private static bool RectEquals(ProcessLauncher.Rect a, ProcessLauncher.Rect b)
+    {
+        return a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
+    }
+
+    private IReadOnlyList<BroadcastManager.BroadcastTarget> GetBroadcastTargets()
     {
         if (_config.Broadcast.BroadcastAll)
         {
-            return ProcessLauncher.GetMainWindowHandlesByProcessName("D2R");
+            var handles = ProcessLauncher.GetMainWindowHandlesByProcessName("D2R");
+            var targets = new List<BroadcastManager.BroadcastTarget>();
+            foreach (var handle in handles)
+            {
+                targets.Add(new BroadcastManager.BroadcastTarget(handle, IsClassicModeWindow(handle)));
+            }
+            return targets;
         }
 
-        var handles = new List<IntPtr>();
+        var targetsList = new List<BroadcastManager.BroadcastTarget>();
         foreach (var account in _config.Accounts.Where(a => a.BroadcastEnabled))
         {
             if (_accountProcessIds.TryGetValue(account.Id, out var pid))
             {
                 var handle = ProcessLauncher.TryGetMainWindowHandle(pid);
                 if (handle != IntPtr.Zero)
-                    handles.Add(handle);
+                    targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
             }
             else if (!string.IsNullOrWhiteSpace(account.Nickname))
             {
-                handles.AddRange(BroadcastManager.FindWindowsByTitleExact(account.Nickname));
+                foreach (var handle in BroadcastManager.FindWindowsByTitleExact(account.Nickname))
+                {
+                    targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
+                }
             }
         }
-        return handles;
+        return targetsList;
     }
 
     private static bool IsForegroundD2R()
     {
         return ProcessLauncher.IsForegroundProcess("D2R");
+    }
+
+    private bool IsClassicModeWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return false;
+
+        var pid = ProcessLauncher.GetWindowProcessId(hwnd);
+        if (pid == 0)
+            return false;
+
+        var account = _config.Accounts.FirstOrDefault(a => _accountProcessIds.TryGetValue(a.Id, out var id) && id == pid);
+        if (account is not null)
+            return account.ClassicMode;
+
+        var title = ProcessLauncher.GetWindowTitle(hwnd);
+        account = _config.Accounts.FirstOrDefault(a =>
+            (!string.IsNullOrWhiteSpace(a.Nickname) && string.Equals(a.Nickname, title, StringComparison.OrdinalIgnoreCase)) ||
+            string.Equals(a.Email, title, StringComparison.OrdinalIgnoreCase));
+
+        return account?.ClassicMode ?? false;
     }
 
     private async Task CheckForUpdatesAsync()
@@ -741,6 +870,15 @@ public partial class MainWindow : Window
             BtnUpdate.IsEnabled = true;
             TxtStatus.Text = "";
         }
+    }
+
+    private static void OpenHandleDownloadPage()
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "https://learn.microsoft.com/en-us/sysinternals/downloads/handle",
+            UseShellExecute = true
+        });
     }
 
     private async Task RunAccountAsync(AccountProfile account)
@@ -793,6 +931,40 @@ public partial class MainWindow : Window
 
                 if (ProcessLauncher.IsProcessRunning("D2R"))
                 {
+                    var scriptPath = ProcessLauncher.TryResolvePreLaunchScript(config.PreLaunch.Path!);
+                    if (ProcessLauncher.IsD2RKillaScript(scriptPath))
+                    {
+                        var handlePath = ProcessLauncher.DefaultHandlePath;
+                        if (!File.Exists(handlePath))
+                        {
+                            var result = System.Windows.MessageBox.Show(
+                                "handle64.exe is required for the pre-launch cleanup script.\n\nPlace handle64.exe next to D2RDS.exe, then retry.\n\nOpen the Sysinternals Handle download page now?",
+                                "handle64.exe missing",
+                                MessageBoxButton.YesNoCancel);
+                            if (result == MessageBoxResult.Yes)
+                            {
+                                OpenHandleDownloadPage();
+                                var retry = System.Windows.MessageBox.Show(
+                                    "After downloading, place handle64.exe next to D2RDS.exe, then click OK to continue.",
+                                    "Waiting for handle64.exe",
+                                    MessageBoxButton.OKCancel);
+                                if (retry == MessageBoxResult.OK && !File.Exists(handlePath))
+                                {
+                                    System.Windows.MessageBox.Show("handle64.exe is still missing. Pre-launch will be skipped for this run.", "Pre-launch skipped");
+                                    goto ContinueLaunch;
+                                }
+                                if (retry != MessageBoxResult.OK)
+                                {
+                                    goto ContinueLaunch;
+                                }
+                            }
+                            else if (result == MessageBoxResult.No || result == MessageBoxResult.Cancel)
+                            {
+                                goto ContinueLaunch;
+                            }
+                        }
+                    }
+
                     Log.Info($"Pre-launch starting: {config.PreLaunch.Path}");
                     await ProcessLauncher.RunPreLaunchAsync(config.PreLaunch.Path!);
                     Log.Info("Pre-launch finished");
@@ -803,6 +975,7 @@ public partial class MainWindow : Window
                 }
             }
 
+        ContinueLaunch:
             var credential = CredentialStore.Read(account.CredentialId);
             if (credential is null)
                 throw new InvalidOperationException("Stored credentials not found. Re-add the account.");
@@ -814,6 +987,12 @@ public partial class MainWindow : Window
             if (process is not null)
                 _accountProcessIds[account.Id] = process.Id;
             await ProcessLauncher.TrySetWindowTitleAsync(process, displayName);
+            var handle = await ProcessLauncher.WaitForMainWindowHandleAsync(process);
+            if (handle != IntPtr.Zero)
+            {
+                ProcessLauncher.TryApplyBorderlessStyle(handle, BorderlessResizableDefault);
+                ProcessLauncher.FitWindowToMonitorWorkArea(handle);
+            }
             Log.Info("Launch triggered");
 
             SetStatus($"Done: {account.Email}");
@@ -832,7 +1011,7 @@ public partial class MainWindow : Window
 
     private static string BuildLaunchArguments(string email, string password, string address)
     {
-        return $"-username {QuoteArg(email)} -password {QuoteArg(password)} -address {QuoteArg(address)}";
+        return $"-username {QuoteArg(email)} -password {QuoteArg(password)} -address {QuoteArg(address)} -w";
     }
 
     private static string QuoteArg(string value)

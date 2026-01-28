@@ -18,8 +18,9 @@ public sealed class BroadcastManager : IDisposable
     private const int HotkeyToggleWindow = 0xB003;
 
     private readonly Func<BroadcastSettings> _settingsProvider;
-    private readonly Func<IReadOnlyList<IntPtr>> _targetsProvider;
+    private readonly Func<IReadOnlyList<BroadcastTarget>> _targetsProvider;
     private readonly Func<bool> _isForegroundTarget;
+    private readonly Func<IntPtr, bool> _classicModeResolver;
     private HwndSource? _source;
 
     private static readonly LowLevelKeyboardProc KeyboardProcDelegate = KeyboardHookProc;
@@ -33,11 +34,16 @@ public sealed class BroadcastManager : IDisposable
     public event Action? ToggleModeRequested;
     public event Action? ToggleWindowRequested;
 
-    public BroadcastManager(Func<BroadcastSettings> settingsProvider, Func<IReadOnlyList<IntPtr>> targetsProvider, Func<bool> isForegroundTarget)
+    public BroadcastManager(
+        Func<BroadcastSettings> settingsProvider,
+        Func<IReadOnlyList<BroadcastTarget>> targetsProvider,
+        Func<bool> isForegroundTarget,
+        Func<IntPtr, bool> classicModeResolver)
     {
         _settingsProvider = settingsProvider;
         _targetsProvider = targetsProvider;
         _isForegroundTarget = isForegroundTarget;
+        _classicModeResolver = classicModeResolver;
     }
 
     public void Initialize(Window window)
@@ -176,11 +182,12 @@ public sealed class BroadcastManager : IDisposable
                     var foreground = GetForegroundWindow();
                     foreach (var target in targets)
                     {
-                        if (target == IntPtr.Zero || target == foreground)
+                        var hwnd = target.Handle;
+                        if (hwnd == IntPtr.Zero || hwnd == foreground)
                             continue;
 
                         var lParamValue = BuildKeyLParam(scanCode, flags, message == WM_KEYUP || message == WM_SYSKEYUP);
-                        PostMessage(target, (uint)message, (IntPtr)vkCode, lParamValue);
+                        PostMessage(hwnd, (uint)message, (IntPtr)vkCode, lParamValue);
                     }
                 }
             }
@@ -202,19 +209,40 @@ public sealed class BroadcastManager : IDisposable
                 {
                     var targets = _instance._targetsProvider();
                     var foreground = GetForegroundWindow();
+                    var pt = info.pt;
+                    var scaled = TryGetScaledPoint(foreground, pt, _instance._classicModeResolver(foreground), out var scaleX, out var scaleY);
                     foreach (var target in targets)
                     {
-                        if (target == IntPtr.Zero || target == foreground)
+                        var hwnd = target.Handle;
+                        if (hwnd == IntPtr.Zero || hwnd == foreground)
                             continue;
 
-                        var pt = info.pt;
                         var clientPoint = pt;
-                        if (ScreenToClient(target, ref clientPoint))
+                        if (scaled && TryGetClientSize(hwnd, out var targetWidth, out var targetHeight) && targetWidth > 0 && targetHeight > 0)
                         {
-                            var lParamValue = (IntPtr)((clientPoint.Y << 16) | (clientPoint.X & 0xFFFF));
-                            var wParamValue = GetMouseWParam(message, info.mouseData);
-                            PostMessage(target, message, wParamValue, lParamValue);
+                            if (target.ClassicMode && TryGetClassicViewport(targetWidth, targetHeight, out var viewport))
+                            {
+                                var x = (int)Math.Round(viewport.Left + (scaleX * viewport.Width));
+                                var y = (int)Math.Round(viewport.Top + (scaleY * viewport.Height));
+                                clientPoint.X = Clamp(x, viewport.Left, viewport.Left + viewport.Width - 1);
+                                clientPoint.Y = Clamp(y, viewport.Top, viewport.Top + viewport.Height - 1);
+                            }
+                            else
+                            {
+                                var x = (int)Math.Round(scaleX * targetWidth);
+                                var y = (int)Math.Round(scaleY * targetHeight);
+                                clientPoint.X = Clamp(x, 0, targetWidth - 1);
+                                clientPoint.Y = Clamp(y, 0, targetHeight - 1);
+                            }
                         }
+                        else if (!ScreenToClient(hwnd, ref clientPoint))
+                        {
+                            continue;
+                        }
+
+                        var lParamValue = (IntPtr)((clientPoint.Y << 16) | (clientPoint.X & 0xFFFF));
+                        var wParamValue = GetMouseWParam(message, info.mouseData);
+                        PostMessage(hwnd, message, wParamValue, lParamValue);
                     }
                 }
             }
@@ -363,6 +391,92 @@ public sealed class BroadcastManager : IDisposable
         return (GetAsyncKeyState(vk) & 0x8000) != 0;
     }
 
+    private static bool TryGetScaledPoint(IntPtr foreground, POINT screenPoint, bool foregroundClassic, out double scaleX, out double scaleY)
+    {
+        scaleX = 0;
+        scaleY = 0;
+        if (foreground == IntPtr.Zero)
+            return false;
+
+        var clientPoint = screenPoint;
+        if (!ScreenToClient(foreground, ref clientPoint))
+            return false;
+
+        if (!TryGetClientSize(foreground, out var width, out var height) || width <= 0 || height <= 0)
+            return false;
+
+        if (foregroundClassic && TryGetClassicViewport(width, height, out var viewport))
+        {
+            var nx = (clientPoint.X - viewport.Left) / (double)viewport.Width;
+            var ny = (clientPoint.Y - viewport.Top) / (double)viewport.Height;
+            scaleX = Clamp(nx, 0, 1);
+            scaleY = Clamp(ny, 0, 1);
+            return true;
+        }
+
+        scaleX = Clamp(clientPoint.X / (double)width, 0, 1);
+        scaleY = Clamp(clientPoint.Y / (double)height, 0, 1);
+        return true;
+    }
+
+    private static bool TryGetClientSize(IntPtr hwnd, out int width, out int height)
+    {
+        width = 0;
+        height = 0;
+        if (hwnd == IntPtr.Zero)
+            return false;
+        if (!GetClientRect(hwnd, out var rect))
+            return false;
+        width = rect.Right - rect.Left;
+        height = rect.Bottom - rect.Top;
+        return true;
+    }
+
+    private static bool TryGetClassicViewport(int width, int height, out RectInt viewport)
+    {
+        viewport = new RectInt(0, 0, width, height);
+        if (width <= 0 || height <= 0)
+            return false;
+
+        const double classicAspect = 4.0 / 3.0;
+        var windowAspect = width / (double)height;
+        int viewWidth;
+        int viewHeight;
+        if (windowAspect > classicAspect)
+        {
+            viewHeight = height;
+            viewWidth = (int)Math.Round(viewHeight * classicAspect);
+        }
+        else
+        {
+            viewWidth = width;
+            viewHeight = (int)Math.Round(viewWidth / classicAspect);
+        }
+
+        var left = (width - viewWidth) / 2;
+        var top = (height - viewHeight) / 2;
+        viewport = new RectInt(left, top, viewWidth, viewHeight);
+        return true;
+    }
+
+    private static int Clamp(int value, int min, int max)
+    {
+        if (value < min)
+            return min;
+        if (value > max)
+            return max;
+        return value;
+    }
+
+    private static double Clamp(double value, double min, double max)
+    {
+        if (value < min)
+            return min;
+        if (value > max)
+            return max;
+        return value;
+    }
+
     // Fallback: resolve windows by exact title (used when process handle isn't available).
     public static IReadOnlyList<IntPtr> FindWindowsByTitleExact(string title)
     {
@@ -434,6 +548,8 @@ public sealed class BroadcastManager : IDisposable
     private const int MK_XBUTTON1 = 0x0020;
     private const int MK_XBUTTON2 = 0x0040;
 
+    public sealed record BroadcastTarget(IntPtr Handle, bool ClassicMode);
+
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -462,6 +578,22 @@ public sealed class BroadcastManager : IDisposable
         public uint flags;
         public uint time;
         public IntPtr dwExtraInfo;
+    }
+
+    private struct RectInt
+    {
+        public int Left;
+        public int Top;
+        public int Width;
+        public int Height;
+
+        public RectInt(int left, int top, int width, int height)
+        {
+            Left = left;
+            Top = top;
+            Width = width;
+            Height = height;
+        }
     }
 
     [DllImport("user32.dll")]
@@ -494,6 +626,9 @@ public sealed class BroadcastManager : IDisposable
     [DllImport("user32.dll")]
     private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
     [DllImport("user32.dll")]
     private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
@@ -510,4 +645,13 @@ public sealed class BroadcastManager : IDisposable
 
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
 }

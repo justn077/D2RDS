@@ -36,8 +36,15 @@ Example (self-contained build):
 5) Use **Edit** to change email/nickname. Use **Change password** to update credentials. **Delete** removes an account.
 6) Use **Up/Down** to reorder accounts. Use **Lock order** to prevent changes.
 7) Toggle **Broadcast** for keyboard/mouse mirroring. Use hotkeys to toggle on/off and switch All vs Selected.
+8) Use **Classic** per account if that window is running Classic mode so mouse broadcasts scale to a 4:3 viewport.
 
 Up to **7 accounts** are supported.
+
+## First launch + driver window
+- Launch one D2R account normally (via Battle.net) at least once.
+- Use D2RDS to launch the other accounts you want to multibox.
+- Broadcasting works for all running D2R windows, but D2RDS cannot single out the manually launched window yet.
+- Recommended: treat the manually launched D2R as your "driver" window.
 
 ## Credentials & storage
 - Passwords are stored in **Windows Credential Manager**.
@@ -80,7 +87,8 @@ Example `config.json`:
       "nickname": "CTA",
       "email": "user@example.com",
       "credentialId": "D2RDS:a1b2c3",
-      "broadcastEnabled": true
+      "broadcastEnabled": true,
+      "classicMode": false
     }
   ]
 }
@@ -88,7 +96,8 @@ Example `config.json`:
 
 ## Pre-launch script
 The default script is copied into `MultiboxLauncher\assets\D2RKilla.ps1`.
-Update its `handle64.exe` path if you move it.
+The script requires Sysinternals Handle (`handle64.exe`), which cannot be redistributed.
+Download Handle from Microsoft Sysinternals and place `handle64.exe` next to `D2RDS.exe` (same folder).
 
 ## Logging
 Writes `logs\launcher.log` next to the built exe.
