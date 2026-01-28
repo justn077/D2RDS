@@ -39,15 +39,32 @@ public static class UpdateService
 
         string downloadUrl = "";
         string apiDownloadUrl = "";
+        string fallbackDownloadUrl = "";
+        string fallbackApiUrl = "";
         foreach (var asset in root.GetProperty("assets").EnumerateArray())
         {
             var name = asset.GetProperty("name").GetString() ?? "";
+            if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(fallbackDownloadUrl))
+                {
+                    fallbackDownloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
+                    fallbackApiUrl = asset.GetProperty("url").GetString() ?? "";
+                }
+            }
+
             if (name.Contains("selfcontained", StringComparison.OrdinalIgnoreCase) && name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
                 downloadUrl = asset.GetProperty("browser_download_url").GetString() ?? "";
                 apiDownloadUrl = asset.GetProperty("url").GetString() ?? "";
                 break;
             }
+        }
+
+        if (string.IsNullOrWhiteSpace(downloadUrl))
+        {
+            downloadUrl = fallbackDownloadUrl;
+            apiDownloadUrl = fallbackApiUrl;
         }
 
         if (string.IsNullOrWhiteSpace(downloadUrl) || string.IsNullOrWhiteSpace(version))
