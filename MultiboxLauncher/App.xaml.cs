@@ -17,7 +17,7 @@ public partial class App : System.Windows.Application
         if (!createdNew)
         {
             ProcessLauncher.TryActivateExistingInstance();
-            MessageBox.Show("D2RDS is already running.", "D2RDS", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show("D2RDS is already running.", "D2RDS", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }
