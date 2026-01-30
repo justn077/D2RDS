@@ -109,6 +109,4 @@ Writes `logs\launcher.log` next to the built exe.
 - If **All** is enabled, all running D2R windows receive input.
 - If **All** is disabled, only accounts with **Bcast** checked receive input.
 
-## Dev note
-`CONTEXT.md` is for development only and should not be included in user-facing packages.
 
