@@ -31,12 +31,36 @@ public partial class MainWindow : Window
     private const bool BorderlessResizableDefault = true;
     private const string DriverWindowTitle = "Diablo II: Resurrected";
     private bool _handlePromptedThisSession;
+    private IntPtr _primaryWindowHandle;
+    private int _lastLayoutHandleCount;
+    private string _lastLayoutGridDevice = "";
+    private IntPtr _lastLayoutForegroundHandle;
+    private DateTime _lastLayoutUtc = DateTime.MinValue;
+    private const double GridAspectRatio = 16.0 / 9.0;
 
     private sealed class WindowMonitorState
     {
         public IntPtr Monitor { get; set; }
         public ProcessLauncher.Rect LastRect { get; set; }
         public DateTime LastMoveUtc { get; set; } = DateTime.UtcNow;
+    }
+
+    private sealed class MonitorOption
+    {
+        public string DeviceName { get; }
+        public string Label { get; }
+        public bool IsPrimary { get; }
+
+        public MonitorOption(Screen screen)
+        {
+            DeviceName = screen.DeviceName;
+            IsPrimary = screen.Primary;
+            var bounds = screen.WorkingArea;
+            var primarySuffix = IsPrimary ? " (Primary)" : "";
+            Label = $"Display {screen.DeviceName} {bounds.Width}x{bounds.Height}{primarySuffix}";
+        }
+
+        public override string ToString() => Label;
     }
 
     public MainWindow()
@@ -72,6 +96,9 @@ public partial class MainWindow : Window
         TxtBroadcastModeHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
         TxtBroadcastModeHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
+        ChkSwapLayout.Checked += (_, _) => SaveLayoutSettings();
+        ChkSwapLayout.Unchecked += (_, _) => SaveLayoutSettings();
+        CmbLayoutMonitor.SelectionChanged += (_, _) => SaveLayoutSettings();
         _monitorTimer.Tick += (_, _) => TrackWindowMonitors();
         Loaded += (_, _) =>
         {
@@ -262,6 +289,8 @@ public partial class MainWindow : Window
         ChkBroadcastMouse.IsChecked = _config.Broadcast.Mouse;
         TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
         TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
+        ChkSwapLayout.IsChecked = _config.WindowLayout.Enabled;
+        LoadLayoutMonitors();
         TxtVersion.Text = $"v{UpdateService.CurrentVersion}";
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
@@ -373,6 +402,42 @@ public partial class MainWindow : Window
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
         UpdateBroadcastStatusWindow();
+    }
+
+    private void LoadLayoutMonitors()
+    {
+        var options = Screen.AllScreens.Select(screen => new MonitorOption(screen)).ToList();
+        CmbLayoutMonitor.ItemsSource = options;
+
+        MonitorOption? selected = null;
+        if (!string.IsNullOrWhiteSpace(_config.WindowLayout.GridMonitorDevice))
+            selected = options.FirstOrDefault(o => string.Equals(o.DeviceName, _config.WindowLayout.GridMonitorDevice, StringComparison.OrdinalIgnoreCase));
+
+        if (selected is null)
+            selected = options.FirstOrDefault(o => !o.IsPrimary) ?? options.FirstOrDefault();
+
+        if (selected is not null)
+        {
+            CmbLayoutMonitor.SelectedItem = selected;
+            if (!string.Equals(_config.WindowLayout.GridMonitorDevice, selected.DeviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                _config.WindowLayout.GridMonitorDevice = selected.DeviceName;
+                ConfigLoader.Save(_config);
+            }
+        }
+    }
+
+    private void SaveLayoutSettings()
+    {
+        _config.WindowLayout.Enabled = ChkSwapLayout.IsChecked == true;
+        if (CmbLayoutMonitor.SelectedItem is MonitorOption option)
+            _config.WindowLayout.GridMonitorDevice = option.DeviceName;
+        ConfigLoader.Save(_config);
+
+        _lastLayoutGridDevice = "";
+        _lastLayoutHandleCount = 0;
+        _lastLayoutForegroundHandle = IntPtr.Zero;
+        _lastLayoutUtc = DateTime.MinValue;
     }
 
     private void OnHotkeyBoxKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -720,6 +785,12 @@ public partial class MainWindow : Window
 
     private void TrackWindowMonitors()
     {
+        if (_config.WindowLayout.Enabled)
+        {
+            UpdateSwapLayout();
+            return;
+        }
+
         var debounceMs = ProcessLauncher.DefaultMoveDebounceMs;
 
         foreach (var kvp in _accountProcessIds)
@@ -764,6 +835,197 @@ public partial class MainWindow : Window
                 }
             }
         }
+    }
+
+    private void UpdateSwapLayout()
+    {
+        var handles = GetOrderedD2RHandles();
+        if (handles.Count == 0)
+            return;
+
+        var primaryScreen = Screen.PrimaryScreen;
+        if (primaryScreen is null)
+            return;
+
+        var gridScreen = GetGridScreen();
+        if (gridScreen is null)
+            return;
+
+        var foreground = ProcessLauncher.GetForegroundWindowHandle();
+        var foregroundD2R = ProcessLauncher.IsWindowProcessName(foreground, "D2R") ? foreground : IntPtr.Zero;
+
+        if (foregroundD2R != IntPtr.Zero)
+            _primaryWindowHandle = foregroundD2R;
+        else if (_primaryWindowHandle == IntPtr.Zero || !handles.Contains(_primaryWindowHandle))
+            _primaryWindowHandle = handles[0];
+
+        if (_primaryWindowHandle == IntPtr.Zero)
+            return;
+
+        var handleCount = handles.Count;
+        var gridDevice = gridScreen.DeviceName;
+        var shouldLayout =
+            handleCount != _lastLayoutHandleCount ||
+            !string.Equals(gridDevice, _lastLayoutGridDevice, StringComparison.OrdinalIgnoreCase) ||
+            foregroundD2R != _lastLayoutForegroundHandle ||
+            (DateTime.UtcNow - _lastLayoutUtc).TotalSeconds > 2;
+
+        _lastLayoutHandleCount = handleCount;
+        _lastLayoutGridDevice = gridDevice;
+        _lastLayoutForegroundHandle = foregroundD2R;
+        _lastLayoutUtc = DateTime.UtcNow;
+
+        if (!shouldLayout)
+            return;
+
+        ProcessLauncher.TryApplyBorderlessStyle(_primaryWindowHandle, BorderlessResizableDefault);
+        var primaryRect = RectFromWorkingArea(primaryScreen.WorkingArea);
+        MoveWindowIfNeeded(_primaryWindowHandle, primaryRect);
+
+        var gridHandles = handles.Where(h => h != _primaryWindowHandle).ToList();
+        if (gridHandles.Count == 0)
+            return;
+
+        if (string.Equals(gridScreen.DeviceName, primaryScreen.DeviceName, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var gridRects = LayoutGrid(gridHandles.Count, gridScreen.WorkingArea, GridAspectRatio);
+        for (var i = 0; i < gridHandles.Count; i++)
+        {
+            var handle = gridHandles[i];
+            if (handle == IntPtr.Zero)
+                continue;
+
+            ProcessLauncher.TryApplyBorderlessStyle(handle, BorderlessResizableDefault);
+            MoveWindowIfNeeded(handle, gridRects[i]);
+        }
+    }
+
+    private Screen? GetGridScreen()
+    {
+        if (!string.IsNullOrWhiteSpace(_config.WindowLayout.GridMonitorDevice))
+        {
+            var screen = Screen.AllScreens.FirstOrDefault(s =>
+                string.Equals(s.DeviceName, _config.WindowLayout.GridMonitorDevice, StringComparison.OrdinalIgnoreCase));
+            if (screen is not null)
+                return screen;
+        }
+
+        return Screen.AllScreens.FirstOrDefault(s => !s.Primary) ?? Screen.PrimaryScreen;
+    }
+
+    private static ProcessLauncher.Rect RectFromWorkingArea(System.Drawing.Rectangle rect)
+    {
+        return new ProcessLauncher.Rect
+        {
+            Left = rect.Left,
+            Top = rect.Top,
+            Right = rect.Right,
+            Bottom = rect.Bottom
+        };
+    }
+
+    private static void MoveWindowIfNeeded(IntPtr handle, ProcessLauncher.Rect target)
+    {
+        if (!ProcessLauncher.TryGetWindowRect(handle, out var current))
+        {
+            ProcessLauncher.MoveWindowToRect(handle, target, noActivate: true);
+            return;
+        }
+
+        var same = current.Left == target.Left &&
+                   current.Top == target.Top &&
+                   current.Right == target.Right &&
+                   current.Bottom == target.Bottom;
+        if (!same)
+            ProcessLauncher.MoveWindowToRect(handle, target, noActivate: true);
+    }
+
+    private static List<ProcessLauncher.Rect> LayoutGrid(int count, System.Drawing.Rectangle workArea, double aspectRatio)
+    {
+        if (count <= 0)
+            return new List<ProcessLauncher.Rect>();
+
+        var bestRows = 1;
+        var bestCols = count;
+        var bestArea = 0.0;
+
+        for (var rows = 1; rows <= count; rows++)
+        {
+            var cols = (int)Math.Ceiling(count / (double)rows);
+            var cellWidth = workArea.Width / (double)cols;
+            var cellHeight = workArea.Height / (double)rows;
+
+            var width = Math.Min(cellWidth, cellHeight * aspectRatio);
+            var height = width / aspectRatio;
+            var area = width * height;
+
+            if (area > bestArea)
+            {
+                bestArea = area;
+                bestRows = rows;
+                bestCols = cols;
+            }
+        }
+
+        var targetRects = new List<ProcessLauncher.Rect>(count);
+        var slotWidth = workArea.Width / (double)bestCols;
+        var slotHeight = workArea.Height / (double)bestRows;
+        var winWidth = Math.Min(slotWidth, slotHeight * aspectRatio);
+        var winHeight = winWidth / aspectRatio;
+
+        for (var index = 0; index < count; index++)
+        {
+            var row = index / bestCols;
+            var col = index % bestCols;
+            var cellLeft = workArea.Left + (int)Math.Round(col * slotWidth);
+            var cellTop = workArea.Top + (int)Math.Round(row * slotHeight);
+
+            var x = cellLeft + (int)Math.Round((slotWidth - winWidth) / 2);
+            var y = cellTop + (int)Math.Round((slotHeight - winHeight) / 2);
+
+            targetRects.Add(new ProcessLauncher.Rect
+            {
+                Left = x,
+                Top = y,
+                Right = x + (int)Math.Round(winWidth),
+                Bottom = y + (int)Math.Round(winHeight)
+            });
+        }
+
+        return targetRects;
+    }
+
+    private IReadOnlyList<IntPtr> GetOrderedD2RHandles()
+    {
+        var ordered = new List<IntPtr>();
+        var seen = new HashSet<IntPtr>();
+
+        foreach (var account in _config.Accounts)
+        {
+            IntPtr handle = IntPtr.Zero;
+            if (_accountProcessIds.TryGetValue(account.Id, out var pid))
+                handle = ProcessLauncher.TryGetMainWindowHandle(pid);
+
+            if (handle == IntPtr.Zero && (!string.IsNullOrWhiteSpace(account.Nickname) || !string.IsNullOrWhiteSpace(account.Email)))
+            {
+                var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
+                var matches = BroadcastManager.FindWindowsByTitleExact(title);
+                if (matches.Count > 0)
+                    handle = matches[0];
+            }
+
+            if (handle != IntPtr.Zero && seen.Add(handle))
+                ordered.Add(handle);
+        }
+
+        foreach (var handle in ProcessLauncher.GetMainWindowHandlesByProcessName("D2R"))
+        {
+            if (handle != IntPtr.Zero && seen.Add(handle))
+                ordered.Add(handle);
+        }
+
+        return ordered;
     }
 
     private static bool RectEquals(ProcessLauncher.Rect a, ProcessLauncher.Rect b)

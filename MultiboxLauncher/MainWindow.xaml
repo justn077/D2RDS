@@ -118,6 +118,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,6" VerticalAlignment="Center">Region</TextBlock>
@@ -147,6 +148,14 @@
                              ToolTip="Global hotkey to toggle broadcasting on/off (default: Ctrl+Alt+B)."/>
                     <TextBox Name="TxtBroadcastModeHotkey" Width="140"
                              ToolTip="Global hotkey to toggle All vs Selected mode (default: Ctrl+Alt+M)."/>
+                </StackPanel>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Window layout</TextBlock>
+                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
+                    <CheckBox Name="ChkSwapLayout" VerticalAlignment="Center" Margin="0,0,10,0"
+                              ToolTip="Keep one D2R fullscreen on the primary monitor and tile the rest on the selected monitor.">Swap grid</CheckBox>
+                    <ComboBox Name="CmbLayoutMonitor" Width="260"
+                              ToolTip="Monitor used for the tiled background windows."/>
                 </StackPanel>
                 </Grid>
 

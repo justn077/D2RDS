@@ -15,6 +15,10 @@
     "toggleModeHotkey": "Ctrl+Alt+M",
     "defaultsApplied": true
   },
+  "windowLayout": {
+    "enabled": false,
+    "gridMonitorDevice": ""
+  },
   "updateToken": "",
   "minimizeToTaskbar": false,
   "accounts": []

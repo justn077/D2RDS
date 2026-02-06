@@ -19,6 +19,7 @@ public sealed class LauncherConfig
     public List<LaunchProfile> Profiles { get; set; } = new();
     public bool LockOrder { get; set; } = false;
     public BroadcastSettings Broadcast { get; set; } = new();
+    public WindowLayoutSettings WindowLayout { get; set; } = new();
     public string UpdateToken { get; set; } = "";
     public bool MinimizeToTaskbar { get; set; } = false;
 
@@ -30,6 +31,8 @@ public sealed class LauncherConfig
         Accounts ??= new List<AccountProfile>();
         Profiles ??= new List<LaunchProfile>();
         Broadcast ??= new BroadcastSettings();
+        WindowLayout ??= new WindowLayoutSettings();
+        WindowLayout.GridMonitorDevice ??= "";
         if (!Broadcast.DefaultsApplied || !Broadcast.Keyboard || !Broadcast.Mouse)
         {
             // Ensure keyboard/mouse default on for existing configs.
@@ -66,6 +69,12 @@ public sealed class BroadcastSettings
     public string ToggleBroadcastHotkey { get; set; } = "Ctrl+Alt+B";
     public string ToggleModeHotkey { get; set; } = "Ctrl+Alt+M";
     public bool DefaultsApplied { get; set; } = false;
+}
+
+public sealed class WindowLayoutSettings
+{
+    public bool Enabled { get; set; } = false;
+    public string GridMonitorDevice { get; set; } = "";
 }
 
 public sealed class LaunchProfile
@@ -452,6 +461,40 @@ public static class ProcessLauncher
             return;
 
         SetWindowPos(hwnd, IntPtr.Zero, workArea.Value.Left, workArea.Value.Top, width, height, SwpNoZOrder | SwpNoActivate);
+    }
+
+    public static void MoveWindowToRect(IntPtr hwnd, Rect rect, bool noActivate)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        var width = rect.Right - rect.Left;
+        var height = rect.Bottom - rect.Top;
+        if (width <= 0 || height <= 0)
+            return;
+
+        var flags = SwpNoZOrder | (noActivate ? SwpNoActivate : 0);
+        SetWindowPos(hwnd, IntPtr.Zero, rect.Left, rect.Top, width, height, flags);
+    }
+
+    public static bool IsWindowProcessName(IntPtr hwnd, string processName)
+    {
+        if (hwnd == IntPtr.Zero || string.IsNullOrWhiteSpace(processName))
+            return false;
+
+        GetWindowThreadProcessId(hwnd, out var pid);
+        if (pid == 0)
+            return false;
+
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            return string.Equals(proc.ProcessName, processName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static void TryApplyBorderlessStyle(IntPtr hwnd, bool allowResize)
