@@ -147,13 +147,11 @@
                              ToolTip="Global hotkey to toggle broadcasting on/off (default: Ctrl+Alt+B)."/>
                     <TextBox Name="TxtBroadcastModeHotkey" Width="140"
                              ToolTip="Global hotkey to toggle All vs Selected mode (default: Ctrl+Alt+M)."/>
-                    <TextBox Name="TxtBroadcastWindowHotkey" Width="140" Margin="8,0,0,0"
-                             ToolTip="Global hotkey to toggle broadcast for the active D2R window (default: Ctrl+Alt+N)."/>
                 </StackPanel>
                 </Grid>
 
                 <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap">
-                    First launch: open one D2R account normally (Battle.net). Use D2RDS to launch the others. Broadcasting works for all windows; treat the manually launched D2R as your "driver" window since it can't be singled out yet.
+                    First launch: open one D2R account normally (Battle.net). Put that account first in the list (driver). Use D2RDS to launch the others; Selected broadcast will include the driver window automatically.
                 </TextBlock>
             </StackPanel>
         </Border>

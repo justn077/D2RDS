@@ -22,11 +22,15 @@ public partial class MainWindow : Window
     private readonly BroadcastManager _broadcastManager;
     private BroadcastStatusWindow? _broadcastStatusWindow;
     private bool _broadcastInitialized;
+    private readonly Dictionary<string, bool> _broadcastSelectionCache = new();
+    private bool _broadcastSelectionCacheReady;
     private NotifyIcon? _trayIcon;
     private readonly DispatcherTimer _monitorTimer = new();
     private bool _monitorTrackingInitialized;
     private readonly Dictionary<string, WindowMonitorState> _windowMonitorStates = new();
     private const bool BorderlessResizableDefault = true;
+    private const string DriverWindowTitle = "Diablo II: Resurrected";
+    private bool _handlePromptedThisSession;
 
     private sealed class WindowMonitorState
     {
@@ -45,7 +49,6 @@ public partial class MainWindow : Window
             IsClassicModeWindow);
         _broadcastManager.ToggleBroadcastRequested += ToggleBroadcastEnabled;
         _broadcastManager.ToggleModeRequested += ToggleBroadcastMode;
-        _broadcastManager.ToggleWindowRequested += ToggleBroadcastForForegroundWindow;
         BtnReload.Click += (_, _) => LoadButtons();
         BtnEdit.Click += (_, _) => EditConfig();
         BtnAddAccount.Click += (_, _) => AddAccount();
@@ -67,10 +70,8 @@ public partial class MainWindow : Window
         ChkBroadcastMouse.Unchecked += (_, _) => SaveBroadcastSettings();
         TxtBroadcastHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastModeHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
-        TxtBroadcastWindowHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
         TxtBroadcastModeHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
-        TxtBroadcastWindowHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
         _monitorTimer.Tick += (_, _) => TrackWindowMonitors();
         Loaded += (_, _) =>
         {
@@ -261,7 +262,6 @@ public partial class MainWindow : Window
         ChkBroadcastMouse.IsChecked = _config.Broadcast.Mouse;
         TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
         TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
-        TxtBroadcastWindowHotkey.Text = _config.Broadcast.ToggleWindowHotkey;
         TxtVersion.Text = $"v{UpdateService.CurrentVersion}";
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
@@ -270,6 +270,7 @@ public partial class MainWindow : Window
         UpdateBroadcastStatusWindow();
         ApplyMinimizeBehavior();
         ConfigureMonitorTracking();
+        CheckHandleRequirementOnStartup();
     }
 
     private void EnsureRegionSelected()
@@ -357,31 +358,21 @@ public partial class MainWindow : Window
     {
         _config.Broadcast.Enabled = ChkBroadcastEnabled.IsChecked == true;
         var broadcastAll = ChkBroadcastAll.IsChecked == true;
-        _config.Broadcast.BroadcastAll = broadcastAll;
-        if (broadcastAll)
-        {
-            foreach (var account in _config.Accounts)
-                account.BroadcastEnabled = true;
-        }
+        ApplyBroadcastAllMode(broadcastAll, saveAfter: false, refreshUi: false);
         _config.Broadcast.Keyboard = ChkBroadcastKeyboard.IsChecked == true;
         _config.Broadcast.Mouse = ChkBroadcastMouse.IsChecked == true;
 
         var toggleHotkey = TxtBroadcastHotkey.Text.Trim();
         var modeHotkey = TxtBroadcastModeHotkey.Text.Trim();
-        var windowHotkey = TxtBroadcastWindowHotkey.Text.Trim();
         if (!string.IsNullOrWhiteSpace(toggleHotkey))
             _config.Broadcast.ToggleBroadcastHotkey = toggleHotkey;
         if (!string.IsNullOrWhiteSpace(modeHotkey))
             _config.Broadcast.ToggleModeHotkey = modeHotkey;
-        if (!string.IsNullOrWhiteSpace(windowHotkey))
-            _config.Broadcast.ToggleWindowHotkey = windowHotkey;
 
         ConfigLoader.Save(_config);
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
         UpdateBroadcastStatusWindow();
-        if (broadcastAll)
-            LoadButtons();
     }
 
     private void OnHotkeyBoxKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -536,6 +527,8 @@ public partial class MainWindow : Window
     private void ToggleAccountBroadcast(AccountProfile account, bool enabled)
     {
         account.BroadcastEnabled = enabled;
+        _broadcastSelectionCache[account.Id] = enabled;
+        _broadcastSelectionCacheReady = true;
         if (_config.Broadcast.BroadcastAll && _config.Accounts.Any(a => !a.BroadcastEnabled))
         {
             _config.Broadcast.BroadcastAll = false;
@@ -565,45 +558,57 @@ public partial class MainWindow : Window
 
     private void ToggleBroadcastMode()
     {
-        _config.Broadcast.BroadcastAll = !_config.Broadcast.BroadcastAll;
-        ConfigLoader.Save(_config);
-        Dispatcher.Invoke(() =>
-        {
-            ChkBroadcastAll.IsChecked = _config.Broadcast.BroadcastAll;
-            UpdateBroadcastStatusWindow();
-        });
+        ApplyBroadcastAllMode(!_config.Broadcast.BroadcastAll, saveAfter: true, refreshUi: true);
     }
 
-    // Hotkey: toggle broadcast for the currently focused D2R window only.
-    private void ToggleBroadcastForForegroundWindow()
+    private void ApplyBroadcastAllMode(bool broadcastAll, bool saveAfter, bool refreshUi)
     {
-        var foreground = ProcessLauncher.GetForegroundWindowHandle();
-        if (foreground == IntPtr.Zero)
+        var previous = _config.Broadcast.BroadcastAll;
+        if (previous == broadcastAll)
             return;
 
-        var pid = ProcessLauncher.GetWindowProcessId(foreground);
-        var account = _config.Accounts.FirstOrDefault(a => _accountProcessIds.TryGetValue(a.Id, out var id) && id == pid);
-        if (account is null)
+        if (broadcastAll)
+            CacheBroadcastSelection();
+
+        _config.Broadcast.BroadcastAll = broadcastAll;
+
+        if (!broadcastAll)
+            RestoreBroadcastSelection();
+
+        if (refreshUi)
         {
-            var title = ProcessLauncher.GetWindowTitle(foreground);
-            account = _config.Accounts.FirstOrDefault(a =>
-                string.Equals(a.Nickname, title, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(a.Email, title, StringComparison.OrdinalIgnoreCase));
+            Dispatcher.Invoke(() =>
+            {
+                ChkBroadcastAll.IsChecked = broadcastAll;
+                LoadButtons();
+                UpdateBroadcastStatusWindow();
+            });
         }
 
-        if (account is null)
+        if (saveAfter)
+            ConfigLoader.Save(_config);
+    }
+
+    private void CacheBroadcastSelection()
+    {
+        _broadcastSelectionCache.Clear();
+        foreach (var account in _config.Accounts)
+            _broadcastSelectionCache[account.Id] = account.BroadcastEnabled;
+        _broadcastSelectionCacheReady = true;
+    }
+
+    private void RestoreBroadcastSelection()
+    {
+        if (!_broadcastSelectionCacheReady)
             return;
 
-        account.BroadcastEnabled = !account.BroadcastEnabled;
-        if (_config.Broadcast.BroadcastAll && _config.Accounts.Any(a => !a.BroadcastEnabled))
-            _config.Broadcast.BroadcastAll = false;
-        ConfigLoader.Save(_config);
-        Dispatcher.Invoke(() =>
+        foreach (var account in _config.Accounts)
         {
-            LoadButtons();
-            UpdateBroadcastStatusWindow();
-        });
+            if (_broadcastSelectionCache.TryGetValue(account.Id, out var enabled))
+                account.BroadcastEnabled = enabled;
+        }
     }
+
 
     private void EnsureBroadcastStatusWindow()
     {
@@ -768,6 +773,8 @@ public partial class MainWindow : Window
 
     private IReadOnlyList<BroadcastManager.BroadcastTarget> GetBroadcastTargets()
     {
+        EnsureDriverWindowBound();
+
         if (_config.Broadcast.BroadcastAll)
         {
             var handles = ProcessLauncher.GetMainWindowHandlesByProcessName("D2R");
@@ -788,15 +795,37 @@ public partial class MainWindow : Window
                 if (handle != IntPtr.Zero)
                     targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
             }
-            else if (!string.IsNullOrWhiteSpace(account.Nickname))
+            else if (!string.IsNullOrWhiteSpace(account.Nickname) || !string.IsNullOrWhiteSpace(account.Email))
             {
-                foreach (var handle in BroadcastManager.FindWindowsByTitleExact(account.Nickname))
+                var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
+                foreach (var handle in BroadcastManager.FindWindowsByTitleExact(title))
                 {
                     targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
                 }
             }
         }
         return targetsList;
+    }
+
+    private void EnsureDriverWindowBound()
+    {
+        if (_config.Accounts.Count == 0)
+            return;
+
+        var driver = _config.Accounts[0];
+        if (_accountProcessIds.ContainsKey(driver.Id))
+            return;
+
+        var handles = BroadcastManager.FindWindowsByTitleExact(DriverWindowTitle);
+        if (handles.Count == 0)
+            return;
+
+        var pid = ProcessLauncher.GetWindowProcessId(handles[0]);
+        if (pid == 0 || _accountProcessIds.Values.Contains(pid))
+            return;
+
+        _accountProcessIds[driver.Id] = pid;
+        Log.Info($"Bound driver window to account: {driver.Email}");
     }
 
     private static bool IsForegroundD2R()
@@ -879,6 +908,37 @@ public partial class MainWindow : Window
             FileName = "https://learn.microsoft.com/en-us/sysinternals/downloads/handle",
             UseShellExecute = true
         });
+    }
+
+    private void CheckHandleRequirementOnStartup()
+    {
+        if (_handlePromptedThisSession)
+            return;
+
+        if (!_config.PreLaunch.Enabled || string.IsNullOrWhiteSpace(_config.PreLaunch.Path))
+            return;
+
+        var scriptPath = ProcessLauncher.TryResolvePreLaunchScript(_config.PreLaunch.Path!);
+        if (!ProcessLauncher.IsD2RKillaScript(scriptPath))
+            return;
+
+        var handlePath = ProcessLauncher.DefaultHandlePath;
+        if (File.Exists(handlePath))
+            return;
+
+        _handlePromptedThisSession = true;
+
+        var message =
+            "handle64.exe is required for the pre-launch cleanup script.\n\n" +
+            "Steps:\n" +
+            "1) Download Sysinternals Handle\n" +
+            "2) Extract handle64.exe\n" +
+            "3) Place handle64.exe next to D2RDS.exe\n\n" +
+            "Open the download page now?";
+
+        var result = System.Windows.MessageBox.Show(message, "handle64.exe missing", MessageBoxButton.YesNo);
+        if (result == MessageBoxResult.Yes)
+            OpenHandleDownloadPage();
     }
 
     private async Task RunAccountAsync(AccountProfile account)
@@ -968,6 +1028,7 @@ public partial class MainWindow : Window
                     Log.Info($"Pre-launch starting: {config.PreLaunch.Path}");
                     await ProcessLauncher.RunPreLaunchAsync(config.PreLaunch.Path!);
                     Log.Info("Pre-launch finished");
+                    await Task.Delay(750);
                 }
                 else
                 {
@@ -983,7 +1044,7 @@ public partial class MainWindow : Window
             var args = BuildLaunchArguments(account.Email, credential.Value.Secret, region.Address);
             var displayName = string.IsNullOrWhiteSpace(account.Nickname) ? account.Email : account.Nickname;
             Log.Info($"Launching: {d2rExe}");
-            var process = ProcessLauncher.LaunchExecutable(d2rExe, args, config.InstallPath);
+            var process = await LaunchD2RWithRetryAsync(d2rExe, args, config.InstallPath);
             if (process is not null)
                 _accountProcessIds[account.Id] = process.Id;
             await ProcessLauncher.TrySetWindowTitleAsync(process, displayName);
@@ -1019,5 +1080,20 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(value))
             return "\"\"";
         return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+
+    private static async Task<Process?> LaunchD2RWithRetryAsync(string exePath, string args, string workingDirectory)
+    {
+        var process = ProcessLauncher.LaunchExecutable(exePath, args, workingDirectory);
+        if (process is null)
+            return null;
+
+        await Task.Delay(1200);
+        if (!process.HasExited)
+            return process;
+
+        Log.Info("Launch exited early; retrying once.");
+        await Task.Delay(1000);
+        return ProcessLauncher.LaunchExecutable(exePath, args, workingDirectory);
     }
 }

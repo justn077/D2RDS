@@ -42,9 +42,9 @@ Up to **7 accounts** are supported.
 
 ## First launch + driver window
 - Launch one D2R account normally (via Battle.net) at least once.
+- Put that account first in your D2RDS list (driver).
 - Use D2RDS to launch the other accounts you want to multibox.
-- Broadcasting works for all running D2R windows, but D2RDS cannot single out the manually launched window yet.
-- Recommended: treat the manually launched D2R as your "driver" window.
+- Selected broadcast will automatically include the driver window (title: "Diablo II: Resurrected").
 
 ## Credentials & storage
 - Passwords are stored in **Windows Credential Manager**.
@@ -77,7 +77,6 @@ Example `config.json`:
     "mouse": true,
     "toggleBroadcastHotkey": "Ctrl+Alt+B",
     "toggleModeHotkey": "Ctrl+Alt+M",
-    "toggleWindowHotkey": "Ctrl+Alt+N",
     "defaultsApplied": true
   },
   "minimizeToTaskbar": false,
@@ -105,7 +104,6 @@ Writes `logs\launcher.log` next to the built exe.
 ## Broadcasting
 - Global toggle hotkey: `Ctrl+Alt+B` (default)
 - Mode hotkey (All vs Selected): `Ctrl+Alt+M` (default)
-- Window hotkey (toggle current window): `Ctrl+Alt+N` (default)
 - If **All** is enabled, all running D2R windows receive input.
 - If **All** is disabled, only accounts with **Bcast** checked receive input.
 

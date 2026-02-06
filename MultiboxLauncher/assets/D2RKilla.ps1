@@ -16,32 +16,55 @@ if (!(Test-Path $handlePath)) {
 
 Write-Host "Searching for all D2R handles..." -ForegroundColor Cyan
 
-# Get handle info for ALL D2R processes
-$handleOutput = & $handlePath -accepteula -a -p D2R.exe 2>&1
-
-if ($handleOutput -match "No matching handles found") {
-    Write-Host "D2R is not running!" -ForegroundColor Red
-    exit 0
-}
-
+$maxAttempts = 6
+$delayMs = 700
 $handlesToKill = @()
 $currentPid = $null
+$foundHandles = $false
 
-# Parse output and collect ALL handles
-foreach($line in $handleOutput) {
-    # Get PID
-    if ($line -match 'D2R\.exe pid: (\d+)') {
-        $currentPid = $matches[1]
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    # Get handle info for ALL D2R processes
+    $handleOutput = & $handlePath -accepteula -a -p D2R.exe 2>&1
+
+    if ($handleOutput -match "No matching handles found") {
+        if ($attempt -lt $maxAttempts) {
+            Start-Sleep -Milliseconds $delayMs
+            continue
+        }
+        Write-Host "D2R is not running or handles not ready yet." -ForegroundColor Red
+        exit 0
     }
-    # Get Handle ID for the mutex - must be Event type with the exact name
-    if ($line -match '^\s*([0-9A-F]+):\s+Event\s+.*DiabloII Check For Other Instances') {
-        $handleId = $matches[1]
-        $handlesToKill += @{PID = $currentPid; HandleID = $handleId}
+
+    $handlesToKill = @()
+    $currentPid = $null
+
+    # Parse output and collect ALL handles
+    foreach($line in $handleOutput) {
+        # Get PID
+        if ($line -match 'D2R\.exe pid: (\d+)') {
+            $currentPid = $matches[1]
+        }
+        # Get Handle ID for the mutex - must be Event type with the exact name
+        if ($line -match '^\s*([0-9A-F]+):\s+Event\s+.*DiabloII Check For Other Instances') {
+            $handleId = $matches[1]
+            $handlesToKill += @{PID = $currentPid; HandleID = $handleId}
+        }
     }
+
+    if ($handlesToKill.Count -eq 0) {
+        if ($attempt -lt $maxAttempts) {
+            Start-Sleep -Milliseconds $delayMs
+            continue
+        }
+        Write-Host "No D2R mutex handles found. Game may not be fully loaded yet." -ForegroundColor Red
+        exit 0
+    }
+
+    $foundHandles = $true
+    break
 }
 
-if ($handlesToKill.Count -eq 0) {
-    Write-Host "No D2R mutex handles found. Game may not be fully loaded yet." -ForegroundColor Red
+if (!$foundHandles) {
     exit 0
 }
 
@@ -54,3 +77,5 @@ foreach($handle in $handlesToKill) {
 }
 
 Write-Host "`nDone! All handles killed. You can now launch your next D2R instance." -ForegroundColor Green
+Start-Sleep -Milliseconds 300
+exit 0

@@ -64,7 +64,6 @@ public sealed class BroadcastSettings
     public bool Mouse { get; set; } = true;
     public string ToggleBroadcastHotkey { get; set; } = "Ctrl+Alt+B";
     public string ToggleModeHotkey { get; set; } = "Ctrl+Alt+M";
-    public string ToggleWindowHotkey { get; set; } = "Ctrl+Alt+N";
     public bool DefaultsApplied { get; set; } = false;
 }
 
@@ -178,12 +177,13 @@ public static class ProcessLauncher
     private const uint WsMaximizeBox = 0x00010000;
     public const int DefaultMonitorCheckIntervalMs = 750;
     public const int DefaultMoveDebounceMs = 500;
+    public const int DefaultPreLaunchTimeoutMs = 20000;
 
     public static string DefaultHandlePath => System.IO.Path.Combine(AppContext.BaseDirectory, HandleExeName);
 
     public static Task RunPreLaunchAsync(string path)
     {
-        return Task.Run(() => StartAndWait(path));
+        return Task.Run(() => StartAndWait(path, DefaultPreLaunchTimeoutMs));
     }
 
     public static void LaunchShortcutOrFile(string path) => StartNoWait(path);
@@ -578,7 +578,7 @@ public static class ProcessLauncher
         });
     }
 
-    private static void StartAndWait(string path)
+    private static void StartAndWait(string path, int timeoutMs)
     {
         var expanded = PathTokens.Expand(path);
         if (!File.Exists(expanded))
@@ -592,7 +592,7 @@ public static class ProcessLauncher
                 Arguments = $"-NoProfile -ExecutionPolicy Bypass -File {QuoteArg(expanded)}",
                 UseShellExecute = true
             });
-            p?.WaitForExit();
+            WaitForExitOrTimeout(p, timeoutMs);
             return;
         }
 
@@ -611,7 +611,7 @@ public static class ProcessLauncher
                     Arguments = psArgs,
                     UseShellExecute = true
                 });
-                ps?.WaitForExit();
+                WaitForExitOrTimeout(ps, timeoutMs);
                 return;
             }
 
@@ -622,7 +622,7 @@ public static class ProcessLauncher
                 WorkingDirectory = string.IsNullOrWhiteSpace(resolved.WorkingDirectory) ? null : resolved.WorkingDirectory,
                 UseShellExecute = false
             });
-            p?.WaitForExit();
+            WaitForExitOrTimeout(p, timeoutMs);
             return;
         }
 
@@ -631,7 +631,32 @@ public static class ProcessLauncher
             FileName = expanded,
             UseShellExecute = true
         });
-        proc?.WaitForExit();
+        WaitForExitOrTimeout(proc, timeoutMs);
+    }
+
+    private static void WaitForExitOrTimeout(Process? process, int timeoutMs)
+    {
+        if (process is null)
+            return;
+
+        if (timeoutMs <= 0)
+        {
+            process.WaitForExit();
+            return;
+        }
+
+        if (!process.WaitForExit(timeoutMs))
+        {
+            Log.Info($"Pre-launch timed out after {timeoutMs}ms; continuing.");
+            try
+            {
+                process.Kill();
+            }
+            catch
+            {
+                // Best-effort only; ignore failures.
+            }
+        }
     }
 
     private static string QuoteArg(string value)
