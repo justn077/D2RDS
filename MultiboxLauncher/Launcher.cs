@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Windows.Forms;
 using System.Threading.Tasks;
 
 namespace MultiboxLauncher;
@@ -434,6 +435,23 @@ public static class ProcessLauncher
             return;
 
         SetWindowPos(hwnd, IntPtr.Zero, workArea.Left, workArea.Top, width, height, SwpNoZOrder | SwpNoActivate);
+    }
+
+    public static void FitWindowToPrimaryWorkArea(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        var workArea = Screen.PrimaryScreen?.WorkingArea;
+        if (workArea is null)
+            return;
+
+        var width = workArea.Value.Width;
+        var height = workArea.Value.Height;
+        if (width <= 0 || height <= 0)
+            return;
+
+        SetWindowPos(hwnd, IntPtr.Zero, workArea.Value.Left, workArea.Value.Top, width, height, SwpNoZOrder | SwpNoActivate);
     }
 
     public static void TryApplyBorderlessStyle(IntPtr hwnd, bool allowResize)

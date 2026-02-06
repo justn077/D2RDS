@@ -1052,7 +1052,8 @@ public partial class MainWindow : Window
             if (handle != IntPtr.Zero)
             {
                 ProcessLauncher.TryApplyBorderlessStyle(handle, BorderlessResizableDefault);
-                ProcessLauncher.FitWindowToMonitorWorkArea(handle);
+                ProcessLauncher.FitWindowToPrimaryWorkArea(handle);
+                await RefitWindowAsync(process, handle);
             }
             Log.Info("Launch triggered");
 
@@ -1080,6 +1081,25 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(value))
             return "\"\"";
         return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+
+    private static async Task RefitWindowAsync(Process? process, IntPtr initialHandle)
+    {
+        if (process is null || initialHandle == IntPtr.Zero)
+            return;
+
+        await Task.Delay(1500);
+        if (process.HasExited)
+            return;
+
+        var handle = process.MainWindowHandle;
+        if (handle == IntPtr.Zero)
+            handle = ProcessLauncher.TryGetMainWindowHandle(process.Id);
+        if (handle == IntPtr.Zero)
+            return;
+
+        ProcessLauncher.TryApplyBorderlessStyle(handle, BorderlessResizableDefault);
+        ProcessLauncher.FitWindowToPrimaryWorkArea(handle);
     }
 
     private static async Task<Process?> LaunchD2RWithRetryAsync(string exePath, string args, string workingDirectory)
