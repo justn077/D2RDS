@@ -28,7 +28,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _monitorTimer = new();
     private bool _monitorTrackingInitialized;
     private readonly Dictionary<string, WindowMonitorState> _windowMonitorStates = new();
-    private const bool BorderlessResizableDefault = true;
     private const string DriverWindowTitle = "Diablo II: Resurrected";
     private bool _handlePromptedThisSession;
     private IntPtr _primaryWindowHandle;
@@ -878,7 +877,7 @@ public partial class MainWindow : Window
         if (!shouldLayout)
             return;
 
-        ProcessLauncher.TryApplyBorderlessStyle(_primaryWindowHandle, BorderlessResizableDefault);
+        ProcessLauncher.TryApplyBorderlessStyle(_primaryWindowHandle, allowResize: false);
         var primaryRect = RectFromWorkingArea(primaryScreen.WorkingArea);
         MoveWindowIfNeeded(_primaryWindowHandle, primaryRect);
 
@@ -896,7 +895,7 @@ public partial class MainWindow : Window
             if (handle == IntPtr.Zero)
                 continue;
 
-            ProcessLauncher.TryApplyBorderlessStyle(handle, BorderlessResizableDefault);
+            ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
             MoveWindowIfNeeded(handle, gridRects[i]);
         }
     }
@@ -1184,18 +1183,19 @@ public partial class MainWindow : Window
         if (!ProcessLauncher.IsD2RKillaScript(scriptPath))
             return;
 
-        var handlePath = ProcessLauncher.DefaultHandlePath;
-        if (File.Exists(handlePath))
+        var handlePath = ProcessLauncher.ResolveHandlePath(_config.PreLaunch.HandlePath);
+        if (!string.IsNullOrWhiteSpace(handlePath))
             return;
 
         _handlePromptedThisSession = true;
 
         var message =
             "handle64.exe is required for the pre-launch cleanup script.\n\n" +
-            "Steps:\n" +
+            "To fix:\n" +
             "1) Download Sysinternals Handle\n" +
             "2) Extract handle64.exe\n" +
-            "3) Place handle64.exe next to D2RDS.exe\n\n" +
+            "3) Either place handle64.exe next to D2RDS.exe or set preLaunch.handlePath in config.json\n" +
+            "   (you can also add its folder to PATH)\n\n" +
             "Open the download page now?";
 
         var result = System.Windows.MessageBox.Show(message, "handle64.exe missing", MessageBoxButton.YesNo);
@@ -1256,21 +1256,21 @@ public partial class MainWindow : Window
                     var scriptPath = ProcessLauncher.TryResolvePreLaunchScript(config.PreLaunch.Path!);
                     if (ProcessLauncher.IsD2RKillaScript(scriptPath))
                     {
-                        var handlePath = ProcessLauncher.DefaultHandlePath;
-                        if (!File.Exists(handlePath))
+                        var handlePath = ProcessLauncher.ResolveHandlePath(config.PreLaunch.HandlePath);
+                        if (string.IsNullOrWhiteSpace(handlePath))
                         {
                             var result = System.Windows.MessageBox.Show(
-                                "handle64.exe is required for the pre-launch cleanup script.\n\nPlace handle64.exe next to D2RDS.exe, then retry.\n\nOpen the Sysinternals Handle download page now?",
+                                "handle64.exe is required for the pre-launch cleanup script.\n\nPlace handle64.exe next to D2RDS.exe, set preLaunch.handlePath in config.json, or add its folder to PATH.\n\nOpen the Sysinternals Handle download page now?",
                                 "handle64.exe missing",
                                 MessageBoxButton.YesNoCancel);
                             if (result == MessageBoxResult.Yes)
                             {
                                 OpenHandleDownloadPage();
                                 var retry = System.Windows.MessageBox.Show(
-                                    "After downloading, place handle64.exe next to D2RDS.exe, then click OK to continue.",
+                                    "After downloading, place handle64.exe next to D2RDS.exe, set preLaunch.handlePath in config.json, or add its folder to PATH, then click OK to continue.",
                                     "Waiting for handle64.exe",
                                     MessageBoxButton.OKCancel);
-                                if (retry == MessageBoxResult.OK && !File.Exists(handlePath))
+                                if (retry == MessageBoxResult.OK && string.IsNullOrWhiteSpace(ProcessLauncher.ResolveHandlePath(config.PreLaunch.HandlePath)))
                                 {
                                     System.Windows.MessageBox.Show("handle64.exe is still missing. Pre-launch will be skipped for this run.", "Pre-launch skipped");
                                     goto ContinueLaunch;
@@ -1313,7 +1313,7 @@ public partial class MainWindow : Window
             var handle = await ProcessLauncher.WaitForMainWindowHandleAsync(process);
             if (handle != IntPtr.Zero)
             {
-                ProcessLauncher.TryApplyBorderlessStyle(handle, BorderlessResizableDefault);
+                ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
                 ProcessLauncher.FitWindowToPrimaryWorkArea(handle);
                 await RefitWindowAsync(process, handle);
             }
@@ -1360,7 +1360,7 @@ public partial class MainWindow : Window
         if (handle == IntPtr.Zero)
             return;
 
-        ProcessLauncher.TryApplyBorderlessStyle(handle, BorderlessResizableDefault);
+        ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
         ProcessLauncher.FitWindowToPrimaryWorkArea(handle);
     }
 
