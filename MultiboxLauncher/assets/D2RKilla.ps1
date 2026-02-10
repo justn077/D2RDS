@@ -5,12 +5,36 @@ if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]:
     exit
 }
 
-# Path to handle64.exe (must be placed next to D2RDS.exe)
+# Path to handle64.exe (app root, config override, or PATH)
 $appRoot = Split-Path -Parent $PSScriptRoot
 $handlePath = Join-Path $appRoot "handle64.exe"
+$configPath = Join-Path $appRoot "config.json"
+if (Test-Path $configPath) {
+    try {
+        $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+        if ($cfg.preLaunch.handlePath) {
+            $candidate = $cfg.preLaunch.handlePath
+            $candidate = $candidate -replace "%APPDIR%", $appRoot
+            $candidate = $candidate -replace "%DESKTOP%", [Environment]::GetFolderPath("Desktop")
+            if (Test-Path $candidate) {
+                $handlePath = $candidate
+            }
+        }
+    } catch {
+        # Ignore config parsing errors
+    }
+}
+
 if (!(Test-Path $handlePath)) {
-    Write-Host "handle64.exe not found at: $handlePath" -ForegroundColor Red
-    Write-Host "Download Sysinternals Handle and place handle64.exe next to D2RDS.exe." -ForegroundColor Yellow
+    $cmd = Get-Command handle64.exe -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Path) {
+        $handlePath = $cmd.Path
+    }
+}
+
+if (!(Test-Path $handlePath)) {
+    Write-Host "handle64.exe not found." -ForegroundColor Red
+    Write-Host "Place handle64.exe next to D2RDS.exe, set preLaunch.handlePath in config.json, or add its folder to PATH." -ForegroundColor Yellow
     exit 1
 }
 

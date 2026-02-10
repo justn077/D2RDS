@@ -1,7 +1,8 @@
 {
   "preLaunch": {
     "enabled": true,
-    "path": "%APPDIR%\\assets\\D2RKilla.ps1"
+    "path": "%APPDIR%\\assets\\D2RKilla.ps1",
+    "handlePath": ""
   },
   "installPath": "C:\\Program Files (x86)\\Diablo II Resurrected",
   "region": "",

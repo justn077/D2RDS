@@ -33,6 +33,7 @@ public sealed class LauncherConfig
         Broadcast ??= new BroadcastSettings();
         WindowLayout ??= new WindowLayoutSettings();
         WindowLayout.GridMonitorDevice ??= "";
+        PreLaunch.HandlePath ??= "";
         if (!Broadcast.DefaultsApplied || !Broadcast.Keyboard || !Broadcast.Mouse)
         {
             // Ensure keyboard/mouse default on for existing configs.
@@ -48,6 +49,7 @@ public sealed class PreLaunchConfig
 {
     public bool Enabled { get; set; } = true;
     public string? Path { get; set; }
+    public string? HandlePath { get; set; }
 }
 
 public sealed class AccountProfile
@@ -190,6 +192,34 @@ public static class ProcessLauncher
     public const int DefaultPreLaunchTimeoutMs = 20000;
 
     public static string DefaultHandlePath => System.IO.Path.Combine(AppContext.BaseDirectory, HandleExeName);
+
+    public static string? ResolveHandlePath(string? configuredPath)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var expanded = PathTokens.Expand(configuredPath.Trim());
+            if (File.Exists(expanded))
+                return expanded;
+        }
+
+        if (File.Exists(DefaultHandlePath))
+            return DefaultHandlePath;
+
+        var envPath = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(envPath))
+            return null;
+
+        foreach (var part in envPath.Split(';'))
+        {
+            if (string.IsNullOrWhiteSpace(part))
+                continue;
+            var candidate = System.IO.Path.Combine(part.Trim(), HandleExeName);
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
+    }
 
     public static Task RunPreLaunchAsync(string path)
     {
