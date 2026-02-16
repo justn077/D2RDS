@@ -5,7 +5,7 @@ WPF launcher that:
 2) launches a selected D2R account with the right arguments
 
 ## Run (dev)
-- `cd C:\Users\justn\src\D2RDS`
+- `cd <path-to-cloned-repo>\D2RDS`
 - `dotnet run --project .\MultiboxLauncher\MultiboxLauncher.csproj`
 
 ## Build & publish
