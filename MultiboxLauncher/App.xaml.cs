@@ -1,5 +1,7 @@
 using System.Threading;
 using System.Windows;
+using System;
+using System.Runtime.InteropServices;
 
 namespace MultiboxLauncher;
 
@@ -9,9 +11,12 @@ namespace MultiboxLauncher;
 public partial class App : System.Windows.Application
 {
     private Mutex? _instanceMutex;
+    private static readonly IntPtr DpiAwarenessContextPerMonitorAwareV2 = new(-4);
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        TryEnablePerMonitorDpiAwareness();
+
         const string mutexName = "Local\\D2RDS.MultiboxLauncher";
         _instanceMutex = new Mutex(true, mutexName, out var createdNew);
         if (!createdNew)
@@ -31,4 +36,19 @@ public partial class App : System.Windows.Application
         _instanceMutex?.Dispose();
         base.OnExit(e);
     }
+
+    private static void TryEnablePerMonitorDpiAwareness()
+    {
+        try
+        {
+            SetProcessDpiAwarenessContext(DpiAwarenessContextPerMonitorAwareV2);
+        }
+        catch
+        {
+            // Best-effort only; older Windows versions may reject this call.
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
 }

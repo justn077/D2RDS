@@ -226,7 +226,7 @@ public sealed class BroadcastManager : IDisposable
                                 clientPoint.Y = Clamp(y, 0, targetHeight - 1);
                             }
                         }
-                        else if (!ScreenToClient(hwnd, ref clientPoint))
+                        else if (!TryScreenToClient(hwnd, pt, out clientPoint))
                         {
                             continue;
                         }
@@ -387,8 +387,7 @@ public sealed class BroadcastManager : IDisposable
         if (foreground == IntPtr.Zero)
             return false;
 
-        var clientPoint = screenPoint;
-        if (!ScreenToClient(foreground, ref clientPoint))
+        if (!TryScreenToClient(foreground, screenPoint, out var clientPoint))
             return false;
 
         if (!TryGetClientSize(foreground, out var width, out var height) || width <= 0 || height <= 0)
@@ -464,6 +463,21 @@ public sealed class BroadcastManager : IDisposable
         if (value > max)
             return max;
         return value;
+    }
+
+    private static bool TryScreenToClient(IntPtr hwnd, POINT screenPoint, out POINT clientPoint)
+    {
+        clientPoint = new POINT();
+        if (hwnd == IntPtr.Zero)
+            return false;
+
+        var clientOrigin = new POINT { X = 0, Y = 0 };
+        if (!ClientToScreen(hwnd, ref clientOrigin))
+            return false;
+
+        clientPoint.X = screenPoint.X - clientOrigin.X;
+        clientPoint.Y = screenPoint.Y - clientOrigin.Y;
+        return true;
     }
 
     // Fallback: resolve windows by exact title (used when process handle isn't available).
@@ -614,6 +628,9 @@ public sealed class BroadcastManager : IDisposable
 
     [DllImport("user32.dll")]
     private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    private static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
