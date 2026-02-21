@@ -1068,13 +1068,15 @@ public partial class MainWindow : Window
             return targets;
         }
 
+        var selectedAccounts = _config.Accounts.Where(a => a.BroadcastEnabled).ToList();
         var targetsList = new List<BroadcastManager.BroadcastTarget>();
-        foreach (var account in _config.Accounts.Where(a => a.BroadcastEnabled))
+        var seenHandles = new HashSet<IntPtr>();
+        foreach (var account in selectedAccounts)
         {
             if (_accountProcessIds.TryGetValue(account.Id, out var pid))
             {
                 var handle = ProcessLauncher.TryGetMainWindowHandle(pid);
-                if (handle != IntPtr.Zero)
+                if (handle != IntPtr.Zero && seenHandles.Add(handle))
                     targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
             }
             else if (!string.IsNullOrWhiteSpace(account.Nickname) || !string.IsNullOrWhiteSpace(account.Email))
@@ -1082,10 +1084,28 @@ public partial class MainWindow : Window
                 var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
                 foreach (var handle in BroadcastManager.FindWindowsByTitleExact(title))
                 {
-                    targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
+                    if (handle != IntPtr.Zero && seenHandles.Add(handle))
+                        targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
                 }
             }
         }
+
+        if (targetsList.Count == 0 && selectedAccounts.Count > 0)
+        {
+            // Fallback when PID/title binding fails (common after restart or title changes):
+            // pair selected accounts with currently running D2R windows in stable order.
+            var orderedHandles = GetOrderedD2RHandles();
+            var count = Math.Min(selectedAccounts.Count, orderedHandles.Count);
+            for (var i = 0; i < count; i++)
+            {
+                var handle = orderedHandles[i];
+                if (handle == IntPtr.Zero || !seenHandles.Add(handle))
+                    continue;
+
+                targetsList.Add(new BroadcastManager.BroadcastTarget(handle, selectedAccounts[i].ClassicMode));
+            }
+        }
+
         return targetsList;
     }
 
