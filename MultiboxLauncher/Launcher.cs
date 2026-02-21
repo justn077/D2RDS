@@ -41,6 +41,10 @@ public sealed class LauncherConfig
             Broadcast.Mouse = true;
             Broadcast.DefaultsApplied = true;
         }
+        if (Broadcast.OverlayLeft.HasValue && (double.IsNaN(Broadcast.OverlayLeft.Value) || double.IsInfinity(Broadcast.OverlayLeft.Value)))
+            Broadcast.OverlayLeft = null;
+        if (Broadcast.OverlayTop.HasValue && (double.IsNaN(Broadcast.OverlayTop.Value) || double.IsInfinity(Broadcast.OverlayTop.Value)))
+            Broadcast.OverlayTop = null;
         UpdateToken ??= "";
     }
 }
@@ -71,6 +75,9 @@ public sealed class BroadcastSettings
     public string ToggleBroadcastHotkey { get; set; } = "Ctrl+Alt+B";
     public string ToggleModeHotkey { get; set; } = "Ctrl+Alt+M";
     public bool DefaultsApplied { get; set; } = false;
+    public bool OverlayLocked { get; set; } = false;
+    public double? OverlayLeft { get; set; }
+    public double? OverlayTop { get; set; }
 }
 
 public sealed class WindowLayoutSettings

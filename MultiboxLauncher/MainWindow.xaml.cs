@@ -295,6 +295,7 @@ public partial class MainWindow : Window
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
 
         EnsureBroadcastStatusWindow();
+        ApplyBroadcastOverlaySettings();
         UpdateBroadcastStatusWindow();
         ApplyMinimizeBehavior();
         ConfigureMonitorTracking();
@@ -682,10 +683,30 @@ public partial class MainWindow : Window
             {
                 ShowActivated = false
             };
+            _broadcastStatusWindow.OverlayStateChanged += OnBroadcastOverlayStateChanged;
             _broadcastStatusWindow.Closed += (_, _) => _broadcastStatusWindow = null;
         }
 
         _broadcastStatusWindow.EnsureVisible();
+    }
+
+    private void ApplyBroadcastOverlaySettings()
+    {
+        if (_broadcastStatusWindow is null)
+            return;
+
+        _broadcastStatusWindow.ApplyPlacement(
+            _config.Broadcast.OverlayLeft,
+            _config.Broadcast.OverlayTop,
+            _config.Broadcast.OverlayLocked);
+    }
+
+    private void OnBroadcastOverlayStateChanged(double left, double top, bool isLocked)
+    {
+        _config.Broadcast.OverlayLeft = left;
+        _config.Broadcast.OverlayTop = top;
+        _config.Broadcast.OverlayLocked = isLocked;
+        ConfigLoader.Save(_config);
     }
 
     private void UpdateBroadcastStatusWindow()

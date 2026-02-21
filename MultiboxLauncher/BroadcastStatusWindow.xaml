@@ -12,7 +12,12 @@
         ShowActivated="False"
         WindowStartupLocation="Manual">
     <!-- Always-on-top broadcast status pill -->
-    <Border Background="#CC000000" CornerRadius="6" Padding="8,6">
+    <Border Name="OverlayBorder"
+            Background="#CC000000"
+            CornerRadius="6"
+            Padding="8,6"
+            MouseLeftButtonDown="OverlayBorder_OnMouseLeftButtonDown"
+            MouseRightButtonUp="OverlayBorder_OnMouseRightButtonUp">
         <TextBlock Name="TxtStatus" Foreground="White" FontSize="12" />
     </Border>
 </Window>
