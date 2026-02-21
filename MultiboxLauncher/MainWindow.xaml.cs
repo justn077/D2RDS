@@ -1071,38 +1071,55 @@ public partial class MainWindow : Window
         var selectedAccounts = _config.Accounts.Where(a => a.BroadcastEnabled).ToList();
         var targetsList = new List<BroadcastManager.BroadcastTarget>();
         var seenHandles = new HashSet<IntPtr>();
+        var unresolvedAccounts = new List<AccountProfile>();
+
         foreach (var account in selectedAccounts)
         {
+            var resolved = false;
             if (_accountProcessIds.TryGetValue(account.Id, out var pid))
             {
                 var handle = ProcessLauncher.TryGetMainWindowHandle(pid);
                 if (handle != IntPtr.Zero && seenHandles.Add(handle))
+                {
                     targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
+                    resolved = true;
+                }
             }
-            else if (!string.IsNullOrWhiteSpace(account.Nickname) || !string.IsNullOrWhiteSpace(account.Email))
+
+            if (!resolved && (!string.IsNullOrWhiteSpace(account.Nickname) || !string.IsNullOrWhiteSpace(account.Email)))
             {
                 var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
                 foreach (var handle in BroadcastManager.FindWindowsByTitleExact(title))
                 {
                     if (handle != IntPtr.Zero && seenHandles.Add(handle))
+                    {
                         targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
+                        resolved = true;
+                    }
                 }
             }
+
+            if (!resolved)
+                unresolvedAccounts.Add(account);
         }
 
-        if (targetsList.Count == 0 && selectedAccounts.Count > 0)
+        if (unresolvedAccounts.Count > 0)
         {
             // Fallback when PID/title binding fails (common after restart or title changes):
-            // pair selected accounts with currently running D2R windows in stable order.
-            var orderedHandles = GetOrderedD2RHandles();
-            var count = Math.Min(selectedAccounts.Count, orderedHandles.Count);
+            // pair unresolved selected accounts with non-foreground D2R windows first.
+            var foreground = ProcessLauncher.GetForegroundWindowHandle();
+            var orderedHandles = GetOrderedD2RHandles()
+                .Where(h => h != IntPtr.Zero && h != foreground && !seenHandles.Contains(h))
+                .ToList();
+
+            var count = Math.Min(unresolvedAccounts.Count, orderedHandles.Count);
             for (var i = 0; i < count; i++)
             {
                 var handle = orderedHandles[i];
                 if (handle == IntPtr.Zero || !seenHandles.Add(handle))
                     continue;
 
-                targetsList.Add(new BroadcastManager.BroadcastTarget(handle, selectedAccounts[i].ClassicMode));
+                targetsList.Add(new BroadcastManager.BroadcastTarget(handle, unresolvedAccounts[i].ClassicMode));
             }
         }
 
@@ -1355,7 +1372,7 @@ public partial class MainWindow : Window
             if (handle != IntPtr.Zero)
             {
                 ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
-                ProcessLauncher.FitWindowToPrimaryWorkArea(handle);
+                ProcessLauncher.FitWindowToMonitorWorkArea(handle);
                 await RefitWindowAsync(process, handle);
             }
             Log.Info("Launch triggered");
@@ -1402,7 +1419,7 @@ public partial class MainWindow : Window
             return;
 
         ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
-        ProcessLauncher.FitWindowToPrimaryWorkArea(handle);
+        ProcessLauncher.FitWindowToMonitorWorkArea(handle);
     }
 
     private static async Task<Process?> LaunchD2RWithRetryAsync(string exePath, string args, string workingDirectory)
