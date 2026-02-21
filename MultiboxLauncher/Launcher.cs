@@ -29,6 +29,8 @@ public sealed class LauncherConfig
         InstallPath = string.IsNullOrWhiteSpace(InstallPath) ? Defaults.DefaultInstallPath : InstallPath;
         Region ??= "";
         Accounts ??= new List<AccountProfile>();
+        foreach (var account in Accounts)
+            account.LaunchMonitorDevice ??= "";
         Profiles ??= new List<LaunchProfile>();
         Broadcast ??= new BroadcastSettings();
         WindowLayout ??= new WindowLayoutSettings();
@@ -64,6 +66,7 @@ public sealed class AccountProfile
     public string CredentialId { get; set; } = "";
     public bool BroadcastEnabled { get; set; } = true;
     public bool ClassicMode { get; set; } = false;
+    public string LaunchMonitorDevice { get; set; } = "";
 }
 
 public sealed class BroadcastSettings

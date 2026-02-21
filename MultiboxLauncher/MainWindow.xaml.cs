@@ -62,6 +62,20 @@ public partial class MainWindow : Window
         public override string ToString() => Label;
     }
 
+    private sealed class AccountLaunchMonitorOption
+    {
+        public string DeviceName { get; }
+        public string Label { get; }
+
+        public AccountLaunchMonitorOption(string deviceName, string label)
+        {
+            DeviceName = deviceName;
+            Label = label;
+        }
+
+        public override string ToString() => Label;
+    }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -148,6 +162,7 @@ public partial class MainWindow : Window
             EnsureRegionSelected();
             EnsureInstallPathSelected();
             LoadSettings();
+            var accountMonitorOptions = BuildAccountLaunchMonitorOptions();
 
             for (var i = 0; i < _config.Accounts.Count; i++)
             {
@@ -159,9 +174,10 @@ public partial class MainWindow : Window
                     Margin = new Thickness(0, 0, 0, 6)
                 };
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(220) });
-                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(200) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(170) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(80) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(190) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(55) });
@@ -209,6 +225,26 @@ public partial class MainWindow : Window
                 classicToggle.Unchecked += (_, _) => ToggleAccountClassic(account, false);
                 System.Windows.Controls.Grid.SetColumn(classicToggle, 3);
 
+                var selectedMonitorOption = accountMonitorOptions.FirstOrDefault(o =>
+                    string.Equals(o.DeviceName, account.LaunchMonitorDevice, StringComparison.OrdinalIgnoreCase))
+                    ?? accountMonitorOptions[0];
+                var launchMonitorCombo = new System.Windows.Controls.ComboBox
+                {
+                    ItemsSource = accountMonitorOptions,
+                    SelectedItem = selectedMonitorOption,
+                    Height = 30,
+                    Width = 182,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = "Choose which display this account should snap to after launch. Auto keeps current monitor."
+                };
+                launchMonitorCombo.SelectionChanged += (_, _) =>
+                {
+                    if (launchMonitorCombo.SelectedItem is AccountLaunchMonitorOption selected)
+                        ToggleAccountLaunchMonitor(account, selected.DeviceName);
+                };
+                System.Windows.Controls.Grid.SetColumn(launchMonitorCombo, 4);
+
                 var editButton = new System.Windows.Controls.Button
                 {
                     Content = "Edit",
@@ -217,7 +253,7 @@ public partial class MainWindow : Window
                     Margin = new Thickness(0)
                 };
                 editButton.Click += (_, _) => EditAccount(account);
-                System.Windows.Controls.Grid.SetColumn(editButton, 4);
+                System.Windows.Controls.Grid.SetColumn(editButton, 5);
 
                 var deleteButton = new System.Windows.Controls.Button
                 {
@@ -227,7 +263,7 @@ public partial class MainWindow : Window
                     Margin = new Thickness(0)
                 };
                 deleteButton.Click += (_, _) => DeleteAccount(account);
-                System.Windows.Controls.Grid.SetColumn(deleteButton, 5);
+                System.Windows.Controls.Grid.SetColumn(deleteButton, 6);
 
                 var upButton = new System.Windows.Controls.Button
                 {
@@ -238,7 +274,7 @@ public partial class MainWindow : Window
                     IsEnabled = !_config.LockOrder && i > 0
                 };
                 upButton.Click += (_, _) => MoveAccount(account, -1);
-                System.Windows.Controls.Grid.SetColumn(upButton, 6);
+                System.Windows.Controls.Grid.SetColumn(upButton, 7);
 
                 var downButton = new System.Windows.Controls.Button
                 {
@@ -249,12 +285,13 @@ public partial class MainWindow : Window
                     IsEnabled = !_config.LockOrder && i < _config.Accounts.Count - 1
                 };
                 downButton.Click += (_, _) => MoveAccount(account, 1);
-                System.Windows.Controls.Grid.SetColumn(downButton, 7);
+                System.Windows.Controls.Grid.SetColumn(downButton, 8);
 
                 row.Children.Add(launchButton);
                 row.Children.Add(emailText);
                 row.Children.Add(broadcastToggle);
                 row.Children.Add(classicToggle);
+                row.Children.Add(launchMonitorCombo);
                 row.Children.Add(editButton);
                 row.Children.Add(deleteButton);
                 row.Children.Add(upButton);
@@ -425,6 +462,24 @@ public partial class MainWindow : Window
                 ConfigLoader.Save(_config);
             }
         }
+    }
+
+    private static List<AccountLaunchMonitorOption> BuildAccountLaunchMonitorOptions()
+    {
+        var options = new List<AccountLaunchMonitorOption>
+        {
+            new("", "Auto (Current Display)")
+        };
+
+        foreach (var screen in Screen.AllScreens)
+        {
+            var bounds = screen.WorkingArea;
+            var primarySuffix = screen.Primary ? " (Primary)" : "";
+            var label = $"Display {screen.DeviceName} {bounds.Width}x{bounds.Height}{primarySuffix}";
+            options.Add(new AccountLaunchMonitorOption(screen.DeviceName, label));
+        }
+
+        return options;
     }
 
     private void SaveLayoutSettings()
@@ -606,6 +661,12 @@ public partial class MainWindow : Window
     private void ToggleAccountClassic(AccountProfile account, bool enabled)
     {
         account.ClassicMode = enabled;
+        ConfigLoader.Save(_config);
+    }
+
+    private void ToggleAccountLaunchMonitor(AccountProfile account, string deviceName)
+    {
+        account.LaunchMonitorDevice = deviceName ?? "";
         ConfigLoader.Save(_config);
     }
 
@@ -932,6 +993,28 @@ public partial class MainWindow : Window
         }
 
         return Screen.AllScreens.FirstOrDefault(s => !s.Primary) ?? Screen.PrimaryScreen;
+    }
+
+    private static Screen? GetScreenByDeviceName(string? deviceName)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName))
+            return null;
+
+        return Screen.AllScreens.FirstOrDefault(s =>
+            string.Equals(s.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void FitWindowToConfiguredMonitorWorkArea(IntPtr handle, string? monitorDeviceName)
+    {
+        var screen = GetScreenByDeviceName(monitorDeviceName);
+        if (screen is null)
+        {
+            ProcessLauncher.FitWindowToMonitorWorkArea(handle);
+            return;
+        }
+
+        var target = RectFromWorkingArea(screen.WorkingArea);
+        ProcessLauncher.MoveWindowToRect(handle, target, noActivate: true);
     }
 
     private static ProcessLauncher.Rect RectFromWorkingArea(System.Drawing.Rectangle rect)
@@ -1372,8 +1455,8 @@ public partial class MainWindow : Window
             if (handle != IntPtr.Zero)
             {
                 ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
-                ProcessLauncher.FitWindowToMonitorWorkArea(handle);
-                await RefitWindowAsync(process, handle);
+                FitWindowToConfiguredMonitorWorkArea(handle, account.LaunchMonitorDevice);
+                await RefitWindowAsync(process, handle, account.LaunchMonitorDevice);
             }
             Log.Info("Launch triggered");
 
@@ -1403,7 +1486,7 @@ public partial class MainWindow : Window
         return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
-    private static async Task RefitWindowAsync(Process? process, IntPtr initialHandle)
+    private static async Task RefitWindowAsync(Process? process, IntPtr initialHandle, string? monitorDeviceName)
     {
         if (process is null || initialHandle == IntPtr.Zero)
             return;
@@ -1419,7 +1502,7 @@ public partial class MainWindow : Window
             return;
 
         ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
-        ProcessLauncher.FitWindowToMonitorWorkArea(handle);
+        FitWindowToConfiguredMonitorWorkArea(handle, monitorDeviceName);
     }
 
     private static async Task<Process?> LaunchD2RWithRetryAsync(string exePath, string args, string workingDirectory)
