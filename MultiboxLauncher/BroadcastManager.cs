@@ -209,7 +209,7 @@ public sealed class BroadcastManager : IDisposable
                             continue;
 
                         var clientPoint = pt;
-                        if (scaled && TryGetWindowSize(hwnd, out var targetWidth, out var targetHeight) && targetWidth > 0 && targetHeight > 0)
+                        if (scaled && TryGetClientSize(hwnd, out var targetWidth, out var targetHeight) && targetWidth > 0 && targetHeight > 0)
                         {
                             if (target.ClassicMode && TryGetClassicViewport(targetWidth, targetHeight, out var viewport))
                             {
@@ -387,18 +387,18 @@ public sealed class BroadcastManager : IDisposable
         if (foreground == IntPtr.Zero)
             return false;
 
-        if (!TryGetWindowRect(foreground, out var rect))
+        if (!TryGetClientRectOnScreen(foreground, out var clientScreenRect))
             return false;
 
-        var width = rect.Right - rect.Left;
-        var height = rect.Bottom - rect.Top;
+        var width = clientScreenRect.Right - clientScreenRect.Left;
+        var height = clientScreenRect.Bottom - clientScreenRect.Top;
         if (width <= 0 || height <= 0)
             return false;
 
         if (foregroundClassic && TryGetClassicViewport(width, height, out var viewport))
         {
-            var relX = screenPoint.X - rect.Left;
-            var relY = screenPoint.Y - rect.Top;
+            var relX = screenPoint.X - clientScreenRect.Left;
+            var relY = screenPoint.Y - clientScreenRect.Top;
             var nx = (relX - viewport.Left) / (double)viewport.Width;
             var ny = (relY - viewport.Top) / (double)viewport.Height;
             scaleX = Clamp(nx, 0, 1);
@@ -406,8 +406,8 @@ public sealed class BroadcastManager : IDisposable
             return true;
         }
 
-        scaleX = Clamp((screenPoint.X - rect.Left) / (double)width, 0, 1);
-        scaleY = Clamp((screenPoint.Y - rect.Top) / (double)height, 0, 1);
+        scaleX = Clamp((screenPoint.X - clientScreenRect.Left) / (double)width, 0, 1);
+        scaleY = Clamp((screenPoint.Y - clientScreenRect.Top) / (double)height, 0, 1);
         return true;
     }
 
@@ -422,19 +422,6 @@ public sealed class BroadcastManager : IDisposable
         width = rect.Right - rect.Left;
         height = rect.Bottom - rect.Top;
         return true;
-    }
-
-    private static bool TryGetWindowSize(IntPtr hwnd, out int width, out int height)
-    {
-        width = 0;
-        height = 0;
-        if (hwnd == IntPtr.Zero)
-            return false;
-        if (!TryGetWindowRect(hwnd, out var rect))
-            return false;
-        width = rect.Right - rect.Left;
-        height = rect.Bottom - rect.Top;
-        return width > 0 && height > 0;
     }
 
     private static bool TryGetClassicViewport(int width, int height, out RectInt viewport)
@@ -489,25 +476,28 @@ public sealed class BroadcastManager : IDisposable
             return false;
 
         clientPoint = screenPoint;
-        if (MapWindowPoints(IntPtr.Zero, hwnd, ref clientPoint, 1) == 0)
-        {
-            // Fallback path for environments where MapWindowPoints returns 0.
-            var clientOrigin = new POINT { X = 0, Y = 0 };
-            if (!ClientToScreen(hwnd, ref clientOrigin))
-                return false;
-            clientPoint.X = screenPoint.X - clientOrigin.X;
-            clientPoint.Y = screenPoint.Y - clientOrigin.Y;
-        }
-
-        return true;
+        return ScreenToClient(hwnd, ref clientPoint);
     }
 
-    private static bool TryGetWindowRect(IntPtr hwnd, out RECT rect)
+    private static bool TryGetClientRectOnScreen(IntPtr hwnd, out RECT rect)
     {
         rect = new RECT();
         if (hwnd == IntPtr.Zero)
             return false;
-        return GetWindowRect(hwnd, out rect);
+
+        if (!GetClientRect(hwnd, out var clientRect))
+            return false;
+
+        var topLeft = new POINT { X = clientRect.Left, Y = clientRect.Top };
+        var bottomRight = new POINT { X = clientRect.Right, Y = clientRect.Bottom };
+        if (!ClientToScreen(hwnd, ref topLeft) || !ClientToScreen(hwnd, ref bottomRight))
+            return false;
+
+        rect.Left = Math.Min(topLeft.X, bottomRight.X);
+        rect.Top = Math.Min(topLeft.Y, bottomRight.Y);
+        rect.Right = Math.Max(topLeft.X, bottomRight.X);
+        rect.Bottom = Math.Max(topLeft.Y, bottomRight.Y);
+        return true;
     }
 
     // Fallback: resolve windows by exact title (used when process handle isn't available).
@@ -661,12 +651,6 @@ public sealed class BroadcastManager : IDisposable
 
     [DllImport("user32.dll")]
     private static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
-
-    [DllImport("user32.dll")]
-    private static extern int MapWindowPoints(IntPtr hWndFrom, IntPtr hWndTo, ref POINT lpPoints, uint cPoints);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
