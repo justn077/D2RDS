@@ -1139,6 +1139,7 @@ public partial class MainWindow : Window
     private IReadOnlyList<BroadcastManager.BroadcastTarget> GetBroadcastTargets()
     {
         EnsureDriverWindowBound();
+        var foreground = ProcessLauncher.GetForegroundWindowHandle();
 
         if (_config.Broadcast.BroadcastAll)
         {
@@ -1162,7 +1163,11 @@ public partial class MainWindow : Window
             if (_accountProcessIds.TryGetValue(account.Id, out var pid))
             {
                 var handle = ProcessLauncher.TryGetMainWindowHandle(pid);
-                if (handle != IntPtr.Zero && seenHandles.Add(handle))
+                if (handle == IntPtr.Zero)
+                {
+                    _accountProcessIds.Remove(account.Id);
+                }
+                else if (handle != foreground && seenHandles.Add(handle))
                 {
                     targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
                     resolved = true;
@@ -1174,7 +1179,7 @@ public partial class MainWindow : Window
                 var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
                 foreach (var handle in BroadcastManager.FindWindowsByTitleExact(title))
                 {
-                    if (handle != IntPtr.Zero && seenHandles.Add(handle))
+                    if (handle != IntPtr.Zero && handle != foreground && seenHandles.Add(handle))
                     {
                         targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
                         resolved = true;
@@ -1190,7 +1195,6 @@ public partial class MainWindow : Window
         {
             // Fallback when PID/title binding fails (common after restart or title changes):
             // pair unresolved selected accounts with non-foreground D2R windows first.
-            var foreground = ProcessLauncher.GetForegroundWindowHandle();
             var orderedHandles = GetOrderedD2RHandles()
                 .Where(h => h != IntPtr.Zero && h != foreground && !seenHandles.Contains(h))
                 .ToList();
