@@ -152,8 +152,10 @@
                                   ToolTip="If checked, broadcast to all running D2R windows. If unchecked, use per-account Bcast toggles.">All</CheckBox>
                         <CheckBox Name="ChkBroadcastKeyboard" VerticalAlignment="Center" Margin="0,0,10,0"
                                   ToolTip="Broadcast keyboard input when enabled.">Keyboard</CheckBox>
-                        <CheckBox Name="ChkBroadcastMouse" VerticalAlignment="Center"
+                        <CheckBox Name="ChkBroadcastMouse" VerticalAlignment="Center" Margin="0,0,10,0"
                                   ToolTip="Broadcast mouse input when enabled.">Mouse</CheckBox>
+                        <CheckBox Name="ChkBroadcastVerticalStack" VerticalAlignment="Center"
+                                  ToolTip="Enable if one game monitor is physically above/below the other and mouse mapping is inverted.">Vertical stack</CheckBox>
                     </StackPanel>
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Broadcast hotkeys</TextBlock>

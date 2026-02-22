@@ -75,6 +75,7 @@ public sealed class BroadcastSettings
     public bool BroadcastAll { get; set; } = true;
     public bool Keyboard { get; set; } = true;
     public bool Mouse { get; set; } = true;
+    public bool VerticalMonitorStackMode { get; set; } = false;
     public string ToggleBroadcastHotkey { get; set; } = "Ctrl+Alt+B";
     public string ToggleModeHotkey { get; set; } = "Ctrl+Alt+M";
     public bool DefaultsApplied { get; set; } = false;

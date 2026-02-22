@@ -211,17 +211,21 @@ public sealed class BroadcastManager : IDisposable
                         var clientPoint = pt;
                         if (scaled && TryGetClientSize(hwnd, out var targetWidth, out var targetHeight) && targetWidth > 0 && targetHeight > 0)
                         {
+                            var mappedScaleY = scaleY;
+                            if (ShouldFlipYForVerticalStack(settings, foreground, hwnd))
+                                mappedScaleY = 1.0 - mappedScaleY;
+
                             if (target.ClassicMode && TryGetClassicViewport(targetWidth, targetHeight, out var viewport))
                             {
                                 var x = (int)Math.Round(viewport.Left + (scaleX * viewport.Width));
-                                var y = (int)Math.Round(viewport.Top + (scaleY * viewport.Height));
+                                var y = (int)Math.Round(viewport.Top + (mappedScaleY * viewport.Height));
                                 clientPoint.X = Clamp(x, viewport.Left, viewport.Left + viewport.Width - 1);
                                 clientPoint.Y = Clamp(y, viewport.Top, viewport.Top + viewport.Height - 1);
                             }
                             else
                             {
                                 var x = (int)Math.Round(scaleX * targetWidth);
-                                var y = (int)Math.Round(scaleY * targetHeight);
+                                var y = (int)Math.Round(mappedScaleY * targetHeight);
                                 clientPoint.X = Clamp(x, 0, targetWidth - 1);
                                 clientPoint.Y = Clamp(y, 0, targetHeight - 1);
                             }
@@ -500,6 +504,45 @@ public sealed class BroadcastManager : IDisposable
         return true;
     }
 
+    private static bool ShouldFlipYForVerticalStack(BroadcastSettings settings, IntPtr sourceHwnd, IntPtr targetHwnd)
+    {
+        if (!settings.VerticalMonitorStackMode)
+            return false;
+        if (sourceHwnd == IntPtr.Zero || targetHwnd == IntPtr.Zero || sourceHwnd == targetHwnd)
+            return false;
+
+        var sourceMonitor = MonitorFromWindow(sourceHwnd, MONITOR_DEFAULTTONEAREST);
+        var targetMonitor = MonitorFromWindow(targetHwnd, MONITOR_DEFAULTTONEAREST);
+        if (sourceMonitor == IntPtr.Zero || targetMonitor == IntPtr.Zero || sourceMonitor == targetMonitor)
+            return false;
+
+        if (!TryGetMonitorRect(sourceMonitor, out var sourceRect) || !TryGetMonitorRect(targetMonitor, out var targetRect))
+            return false;
+
+        var sourceCx = (sourceRect.Left + sourceRect.Right) / 2;
+        var sourceCy = (sourceRect.Top + sourceRect.Bottom) / 2;
+        var targetCx = (targetRect.Left + targetRect.Right) / 2;
+        var targetCy = (targetRect.Top + targetRect.Bottom) / 2;
+
+        var dx = Math.Abs(targetCx - sourceCx);
+        var dy = Math.Abs(targetCy - sourceCy);
+        return dy > dx;
+    }
+
+    private static bool TryGetMonitorRect(IntPtr monitor, out RECT rect)
+    {
+        rect = new RECT();
+        if (monitor == IntPtr.Zero)
+            return false;
+
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(monitor, ref info))
+            return false;
+
+        rect = info.rcMonitor;
+        return true;
+    }
+
     // Fallback: resolve windows by exact title (used when process handle isn't available).
     public static IReadOnlyList<IntPtr> FindWindowsByTitleExact(string title)
     {
@@ -549,6 +592,7 @@ public sealed class BroadcastManager : IDisposable
 
     private const int WH_KEYBOARD_LL = 13;
     private const int WH_MOUSE_LL = 14;
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
     private const uint MOD_ALT = 0x0001;
     private const uint MOD_CONTROL = 0x0002;
     private const uint MOD_SHIFT = 0x0004;
@@ -673,6 +717,15 @@ public sealed class BroadcastManager : IDisposable
     private static extern short GetAsyncKeyState(int vKey);
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public int dwFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct RECT
     {
         public int Left;
@@ -680,4 +733,10 @@ public sealed class BroadcastManager : IDisposable
         public int Right;
         public int Bottom;
     }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 }

@@ -105,6 +105,8 @@ public partial class MainWindow : Window
         ChkBroadcastKeyboard.Unchecked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastMouse.Checked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastMouse.Unchecked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastVerticalStack.Checked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastVerticalStack.Unchecked += (_, _) => SaveBroadcastSettings();
         TxtBroadcastHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastModeHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
@@ -323,6 +325,7 @@ public partial class MainWindow : Window
         ChkBroadcastAll.IsChecked = _config.Broadcast.BroadcastAll;
         ChkBroadcastKeyboard.IsChecked = _config.Broadcast.Keyboard;
         ChkBroadcastMouse.IsChecked = _config.Broadcast.Mouse;
+        ChkBroadcastVerticalStack.IsChecked = _config.Broadcast.VerticalMonitorStackMode;
         TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
         TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
         ChkSwapLayout.IsChecked = _config.WindowLayout.Enabled;
@@ -427,6 +430,7 @@ public partial class MainWindow : Window
         ApplyBroadcastAllMode(broadcastAll, saveAfter: false, refreshUi: false);
         _config.Broadcast.Keyboard = ChkBroadcastKeyboard.IsChecked == true;
         _config.Broadcast.Mouse = ChkBroadcastMouse.IsChecked == true;
+        _config.Broadcast.VerticalMonitorStackMode = ChkBroadcastVerticalStack.IsChecked == true;
 
         var toggleHotkey = TxtBroadcastHotkey.Text.Trim();
         var modeHotkey = TxtBroadcastModeHotkey.Text.Trim();
