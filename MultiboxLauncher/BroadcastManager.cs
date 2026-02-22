@@ -215,7 +215,7 @@ public sealed class BroadcastManager : IDisposable
                             if (ShouldFlipYForVerticalStack(settings, foreground, hwnd))
                                 mappedScaleY = 1.0 - mappedScaleY;
 
-                            if (target.ClassicMode && TryGetClassicViewport(targetWidth, targetHeight, out var viewport))
+                            if (TryGetGameplayViewport(targetWidth, targetHeight, target.ClassicMode, out var viewport))
                             {
                                 var x = (int)Math.Round(viewport.Left + (scaleX * viewport.Width));
                                 var y = (int)Math.Round(viewport.Top + (mappedScaleY * viewport.Height));
@@ -399,7 +399,7 @@ public sealed class BroadcastManager : IDisposable
         if (width <= 0 || height <= 0)
             return false;
 
-        if (foregroundClassic && TryGetClassicViewport(width, height, out var viewport))
+        if (TryGetGameplayViewport(width, height, foregroundClassic, out var viewport))
         {
             var relX = screenPoint.X - clientScreenRect.Left;
             var relY = screenPoint.Y - clientScreenRect.Top;
@@ -428,26 +428,37 @@ public sealed class BroadcastManager : IDisposable
         return true;
     }
 
-    private static bool TryGetClassicViewport(int width, int height, out RectInt viewport)
+    private static bool TryGetGameplayViewport(int width, int height, bool classicMode, out RectInt viewport)
     {
         viewport = new RectInt(0, 0, width, height);
         if (width <= 0 || height <= 0)
             return false;
 
-        const double classicAspect = 4.0 / 3.0;
         var windowAspect = width / (double)height;
+        var targetAspect = classicMode ? (4.0 / 3.0) : (16.0 / 9.0);
+
+        // For non-classic in near-16:9 windows, preserve full-area behavior.
+        if (!classicMode && Math.Abs(windowAspect - targetAspect) < 0.03)
+        {
+            viewport = new RectInt(0, 0, width, height);
+            return true;
+        }
+
         int viewWidth;
         int viewHeight;
-        if (windowAspect > classicAspect)
+        if (windowAspect > targetAspect)
         {
             viewHeight = height;
-            viewWidth = (int)Math.Round(viewHeight * classicAspect);
+            viewWidth = (int)Math.Round(viewHeight * targetAspect);
         }
         else
         {
             viewWidth = width;
-            viewHeight = (int)Math.Round(viewWidth / classicAspect);
+            viewHeight = (int)Math.Round(viewWidth / targetAspect);
         }
+
+        if (viewWidth <= 0 || viewHeight <= 0)
+            return false;
 
         var left = (width - viewWidth) / 2;
         var top = (height - viewHeight) / 2;
