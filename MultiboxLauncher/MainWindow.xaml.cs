@@ -3,13 +3,17 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Media;
 using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Forms;
 using System.Drawing;
 using System.Windows.Threading;
+using Microsoft.Win32;
 
 namespace MultiboxLauncher;
 
@@ -76,6 +80,20 @@ public partial class MainWindow : Window
         public override string ToString() => Label;
     }
 
+    private sealed class AccountRegionOption
+    {
+        public string RegionName { get; }
+        public string Label { get; }
+
+        public AccountRegionOption(string regionName, string label)
+        {
+            RegionName = regionName ?? "";
+            Label = label;
+        }
+
+        public override string ToString() => Label;
+    }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -90,6 +108,8 @@ public partial class MainWindow : Window
         BtnEdit.Click += (_, _) => EditConfig();
         BtnAddAccount.Click += (_, _) => AddAccount();
         BtnUpdate.Click += async (_, _) => await CheckForUpdatesAsync();
+        BtnExportProfile.Click += (_, _) => ExportLayoutBroadcastProfile();
+        BtnImportProfile.Click += (_, _) => ImportLayoutBroadcastProfile();
         BtnBrowseInstall.Click += (_, _) => BrowseInstallPath();
         CmbRegion.SelectionChanged += (_, _) => SaveRegionSelection();
         TxtInstallPath.LostFocus += (_, _) => SaveInstallPath();
@@ -101,6 +121,10 @@ public partial class MainWindow : Window
         ChkBroadcastEnabled.Unchecked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastAll.Checked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastAll.Unchecked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastIncludeMain.Checked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastIncludeMain.Unchecked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastSound.Checked += (_, _) => SaveBroadcastSettings();
+        ChkBroadcastSound.Unchecked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastKeyboard.Checked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastKeyboard.Unchecked += (_, _) => SaveBroadcastSettings();
         ChkBroadcastMouse.Checked += (_, _) => SaveBroadcastSettings();
@@ -109,6 +133,7 @@ public partial class MainWindow : Window
         ChkBroadcastVerticalStack.Unchecked += (_, _) => SaveBroadcastSettings();
         TxtBroadcastHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
         TxtBroadcastModeHotkey.LostFocus += (_, _) => SaveBroadcastSettings();
+        CmbBroadcastEngine.SelectionChanged += (_, _) => SaveBroadcastSettings();
         TxtBroadcastHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
         TxtBroadcastModeHotkey.PreviewKeyDown += OnHotkeyBoxKeyDown;
         ChkSwapLayout.Checked += (_, _) => SaveLayoutSettings();
@@ -124,6 +149,7 @@ public partial class MainWindow : Window
             }
             LoadButtons();
         };
+        Closing += (_, _) => SaveSettingsFromUiOnClose();
         StateChanged += (_, _) => HandleMinimizeToTray();
     }
 
@@ -154,6 +180,95 @@ public partial class MainWindow : Window
         });
     }
 
+    private void ExportLayoutBroadcastProfile()
+    {
+        try
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Export Layout/Broadcast Profile",
+                Filter = "D2RDS profile (*.d2rdsprofile.json)|*.d2rdsprofile.json|JSON (*.json)|*.json",
+                FileName = $"D2RDS-profile-{DateTime.Now:yyyyMMdd-HHmm}.d2rdsprofile.json"
+            };
+            if (dialog.ShowDialog(this) != true)
+                return;
+
+            var bundle = new LayoutBroadcastProfile
+            {
+                Name = $"Export {DateTime.Now:yyyy-MM-dd HH:mm}",
+                ExportedAtUtc = DateTime.UtcNow,
+                Broadcast = _config.Broadcast,
+                WindowLayout = _config.WindowLayout,
+                Accounts = _config.Accounts.Select(a => new AccountLayoutBroadcastBinding
+                {
+                    Id = a.Id,
+                    Email = a.Email,
+                    Nickname = a.Nickname,
+                    BroadcastEnabled = a.BroadcastEnabled,
+                    ClassicMode = a.ClassicMode,
+                    LaunchMonitorDevice = a.LaunchMonitorDevice
+                }).ToList()
+            };
+
+            var json = JsonSerializer.Serialize(bundle, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(dialog.FileName, json);
+            SetStatus($"Exported profile: {Path.GetFileName(dialog.FileName)}");
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(ex.Message, "Export profile error");
+        }
+    }
+
+    private void ImportLayoutBroadcastProfile()
+    {
+        try
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Import Layout/Broadcast Profile",
+                Filter = "D2RDS profile (*.d2rdsprofile.json)|*.d2rdsprofile.json|JSON (*.json)|*.json"
+            };
+            if (dialog.ShowDialog(this) != true)
+                return;
+
+            var json = File.ReadAllText(dialog.FileName);
+            var bundle = JsonSerializer.Deserialize<LayoutBroadcastProfile>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            if (bundle is null)
+                throw new InvalidOperationException("Failed to parse selected profile file.");
+
+            _config.Broadcast = bundle.Broadcast ?? new BroadcastSettings();
+            _config.WindowLayout = bundle.WindowLayout ?? new WindowLayoutSettings();
+
+            if (bundle.Accounts is not null)
+            {
+                foreach (var src in bundle.Accounts)
+                {
+                    var account = _config.Accounts.FirstOrDefault(a =>
+                        (!string.IsNullOrWhiteSpace(src.Id) && string.Equals(a.Id, src.Id, StringComparison.OrdinalIgnoreCase)) ||
+                        (!string.IsNullOrWhiteSpace(src.Email) && string.Equals(a.Email, src.Email, StringComparison.OrdinalIgnoreCase)));
+                    if (account is null)
+                        continue;
+
+                    account.BroadcastEnabled = src.BroadcastEnabled;
+                    account.ClassicMode = src.ClassicMode;
+                    account.LaunchMonitorDevice = src.LaunchMonitorDevice ?? "";
+                }
+            }
+
+            ConfigLoader.Save(_config);
+            LoadButtons();
+            SetStatus($"Imported profile: {Path.GetFileName(dialog.FileName)}");
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(ex.Message, "Import profile error");
+        }
+    }
+
     private void LoadButtons()
     {
         try
@@ -165,6 +280,7 @@ public partial class MainWindow : Window
             EnsureInstallPathSelected();
             LoadSettings();
             var accountMonitorOptions = BuildAccountLaunchMonitorOptions();
+            var accountRegionOptions = BuildAccountRegionOptions();
 
             for (var i = 0; i < _config.Accounts.Count; i++)
             {
@@ -179,6 +295,7 @@ public partial class MainWindow : Window
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(170) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(80) });
+                row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(130) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(190) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
                 row.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(70) });
@@ -227,6 +344,26 @@ public partial class MainWindow : Window
                 classicToggle.Unchecked += (_, _) => ToggleAccountClassic(account, false);
                 System.Windows.Controls.Grid.SetColumn(classicToggle, 3);
 
+                var selectedRegionOption = accountRegionOptions.FirstOrDefault(o =>
+                    string.Equals(o.RegionName, account.Region, StringComparison.OrdinalIgnoreCase))
+                    ?? accountRegionOptions[0];
+                var accountRegionCombo = new System.Windows.Controls.ComboBox
+                {
+                    ItemsSource = accountRegionOptions,
+                    SelectedItem = selectedRegionOption,
+                    Height = 30,
+                    Width = 122,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = "Per-account launch region for fast relaunch trading."
+                };
+                accountRegionCombo.SelectionChanged += (_, _) =>
+                {
+                    if (accountRegionCombo.SelectedItem is AccountRegionOption selected)
+                        ToggleAccountRegion(account, selected.RegionName);
+                };
+                System.Windows.Controls.Grid.SetColumn(accountRegionCombo, 4);
+
                 var selectedMonitorOption = accountMonitorOptions.FirstOrDefault(o =>
                     string.Equals(o.DeviceName, account.LaunchMonitorDevice, StringComparison.OrdinalIgnoreCase))
                     ?? accountMonitorOptions[0];
@@ -245,7 +382,7 @@ public partial class MainWindow : Window
                     if (launchMonitorCombo.SelectedItem is AccountLaunchMonitorOption selected)
                         ToggleAccountLaunchMonitor(account, selected.DeviceName);
                 };
-                System.Windows.Controls.Grid.SetColumn(launchMonitorCombo, 4);
+                System.Windows.Controls.Grid.SetColumn(launchMonitorCombo, 5);
 
                 var editButton = new System.Windows.Controls.Button
                 {
@@ -255,7 +392,7 @@ public partial class MainWindow : Window
                     Margin = new Thickness(0)
                 };
                 editButton.Click += (_, _) => EditAccount(account);
-                System.Windows.Controls.Grid.SetColumn(editButton, 5);
+                System.Windows.Controls.Grid.SetColumn(editButton, 6);
 
                 var deleteButton = new System.Windows.Controls.Button
                 {
@@ -265,7 +402,7 @@ public partial class MainWindow : Window
                     Margin = new Thickness(0)
                 };
                 deleteButton.Click += (_, _) => DeleteAccount(account);
-                System.Windows.Controls.Grid.SetColumn(deleteButton, 6);
+                System.Windows.Controls.Grid.SetColumn(deleteButton, 7);
 
                 var upButton = new System.Windows.Controls.Button
                 {
@@ -276,7 +413,7 @@ public partial class MainWindow : Window
                     IsEnabled = !_config.LockOrder && i > 0
                 };
                 upButton.Click += (_, _) => MoveAccount(account, -1);
-                System.Windows.Controls.Grid.SetColumn(upButton, 7);
+                System.Windows.Controls.Grid.SetColumn(upButton, 8);
 
                 var downButton = new System.Windows.Controls.Button
                 {
@@ -287,12 +424,13 @@ public partial class MainWindow : Window
                     IsEnabled = !_config.LockOrder && i < _config.Accounts.Count - 1
                 };
                 downButton.Click += (_, _) => MoveAccount(account, 1);
-                System.Windows.Controls.Grid.SetColumn(downButton, 8);
+                System.Windows.Controls.Grid.SetColumn(downButton, 9);
 
                 row.Children.Add(launchButton);
                 row.Children.Add(emailText);
                 row.Children.Add(broadcastToggle);
                 row.Children.Add(classicToggle);
+                row.Children.Add(accountRegionCombo);
                 row.Children.Add(launchMonitorCombo);
                 row.Children.Add(editButton);
                 row.Children.Add(deleteButton);
@@ -323,11 +461,19 @@ public partial class MainWindow : Window
         ChkMinimizeToTaskbar.IsChecked = _config.MinimizeToTaskbar;
         ChkBroadcastEnabled.IsChecked = _config.Broadcast.Enabled;
         ChkBroadcastAll.IsChecked = _config.Broadcast.BroadcastAll;
+        ChkBroadcastIncludeMain.IsChecked = _config.Broadcast.IncludeMainWindowInSelected;
+        ChkBroadcastSound.IsChecked = _config.Broadcast.ActivationSoundEnabled;
         ChkBroadcastKeyboard.IsChecked = _config.Broadcast.Keyboard;
         ChkBroadcastMouse.IsChecked = _config.Broadcast.Mouse;
         ChkBroadcastVerticalStack.IsChecked = _config.Broadcast.VerticalMonitorStackMode;
         TxtBroadcastHotkey.Text = _config.Broadcast.ToggleBroadcastHotkey;
         TxtBroadcastModeHotkey.Text = _config.Broadcast.ToggleModeHotkey;
+        CmbBroadcastEngine.ItemsSource = new[]
+        {
+            "LegacyWindowMessages",
+            "IsbStyleProcessFanout"
+        };
+        CmbBroadcastEngine.SelectedItem = _config.Broadcast.InputEngine;
         ChkSwapLayout.IsChecked = _config.WindowLayout.Enabled;
         LoadLayoutMonitors();
         TxtVersion.Text = $"v{UpdateService.CurrentVersion}";
@@ -337,6 +483,7 @@ public partial class MainWindow : Window
         EnsureBroadcastStatusWindow();
         ApplyBroadcastOverlaySettings();
         UpdateBroadcastStatusWindow();
+        UpdateBroadcastDiagnostics();
         ApplyMinimizeBehavior();
         ConfigureMonitorTracking();
         CheckHandleRequirementOnStartup();
@@ -402,9 +549,6 @@ public partial class MainWindow : Window
     private void SaveInstallPath()
     {
         var path = TxtInstallPath.Text.Trim();
-        if (string.IsNullOrWhiteSpace(path))
-            return;
-
         _config.InstallPath = path;
         ConfigLoader.Save(_config);
     }
@@ -425,24 +569,34 @@ public partial class MainWindow : Window
 
     private void SaveBroadcastSettings()
     {
+        var wasBroadcastActive = IsBroadcastActive(_config.Broadcast);
         _config.Broadcast.Enabled = ChkBroadcastEnabled.IsChecked == true;
         var broadcastAll = ChkBroadcastAll.IsChecked == true;
         ApplyBroadcastAllMode(broadcastAll, saveAfter: false, refreshUi: false);
+        _config.Broadcast.IncludeMainWindowInSelected = ChkBroadcastIncludeMain.IsChecked == true;
+        _config.Broadcast.ActivationSoundEnabled = ChkBroadcastSound.IsChecked != false;
         _config.Broadcast.Keyboard = ChkBroadcastKeyboard.IsChecked == true;
         _config.Broadcast.Mouse = ChkBroadcastMouse.IsChecked == true;
         _config.Broadcast.VerticalMonitorStackMode = ChkBroadcastVerticalStack.IsChecked == true;
+        _config.Broadcast.InputEngine = CmbBroadcastEngine.SelectedItem?.ToString() ?? "LegacyWindowMessages";
+        // Advanced mapping stays internal/automatic.
+        _config.Broadcast.MouseTransformMode = "Viewport";
+        _config.Broadcast.UseRepeaterRegions = false;
+        _config.Broadcast.SourceRepeaterRegion = "";
+        _config.Broadcast.TargetRepeaterRegion = "";
 
-        var toggleHotkey = TxtBroadcastHotkey.Text.Trim();
-        var modeHotkey = TxtBroadcastModeHotkey.Text.Trim();
-        if (!string.IsNullOrWhiteSpace(toggleHotkey))
-            _config.Broadcast.ToggleBroadcastHotkey = toggleHotkey;
-        if (!string.IsNullOrWhiteSpace(modeHotkey))
-            _config.Broadcast.ToggleModeHotkey = modeHotkey;
+        _config.Broadcast.ToggleBroadcastHotkey = TxtBroadcastHotkey.Text.Trim();
+        _config.Broadcast.ToggleModeHotkey = TxtBroadcastModeHotkey.Text.Trim();
 
         ConfigLoader.Save(_config);
         _broadcastManager.UpdateHotkeys();
         _broadcastManager.UpdateBroadcastState(_config.Broadcast);
         UpdateBroadcastStatusWindow();
+        UpdateBroadcastDiagnostics();
+
+        var isBroadcastActive = IsBroadcastActive(_config.Broadcast);
+        if (_config.Broadcast.ActivationSoundEnabled && wasBroadcastActive != isBroadcastActive)
+            PlayBroadcastStateAlert(isBroadcastActive);
     }
 
     private void LoadLayoutMonitors()
@@ -486,9 +640,27 @@ public partial class MainWindow : Window
         return options;
     }
 
+    private static List<AccountRegionOption> BuildAccountRegionOptions()
+    {
+        var options = new List<AccountRegionOption>
+        {
+            new("", "Global (App default)")
+        };
+
+        foreach (var option in RegionOptions.All)
+            options.Add(new AccountRegionOption(option.Name, option.Name));
+
+        return options;
+    }
+
     private void SaveLayoutSettings()
     {
         _config.WindowLayout.Enabled = ChkSwapLayout.IsChecked == true;
+        // Keep layout region model internal/automatic.
+        _config.WindowLayout.UseRegionModel = false;
+        _config.WindowLayout.InstantSwap = true;
+        _config.WindowLayout.ForegroundRegion = "";
+        _config.WindowLayout.BackgroundRegion = "";
         if (CmbLayoutMonitor.SelectedItem is MonitorOption option)
             _config.WindowLayout.GridMonitorDevice = option.DeviceName;
         ConfigLoader.Save(_config);
@@ -497,6 +669,49 @@ public partial class MainWindow : Window
         _lastLayoutHandleCount = 0;
         _lastLayoutForegroundHandle = IntPtr.Zero;
         _lastLayoutUtc = DateTime.MinValue;
+        UpdateBroadcastDiagnostics();
+    }
+
+    private void SaveSettingsFromUiOnClose()
+    {
+        try
+        {
+            if (CmbRegion.SelectedItem is RegionOption selectedRegion)
+                _config.Region = selectedRegion.Name;
+
+            _config.InstallPath = TxtInstallPath.Text.Trim();
+            _config.LockOrder = ChkLockOrder.IsChecked == true;
+            _config.MinimizeToTaskbar = ChkMinimizeToTaskbar.IsChecked == true;
+
+            _config.Broadcast.Enabled = ChkBroadcastEnabled.IsChecked == true;
+            _config.Broadcast.BroadcastAll = ChkBroadcastAll.IsChecked == true;
+            _config.Broadcast.IncludeMainWindowInSelected = ChkBroadcastIncludeMain.IsChecked == true;
+            _config.Broadcast.ActivationSoundEnabled = ChkBroadcastSound.IsChecked != false;
+            _config.Broadcast.Keyboard = ChkBroadcastKeyboard.IsChecked == true;
+            _config.Broadcast.Mouse = ChkBroadcastMouse.IsChecked == true;
+            _config.Broadcast.VerticalMonitorStackMode = ChkBroadcastVerticalStack.IsChecked == true;
+            _config.Broadcast.ToggleBroadcastHotkey = TxtBroadcastHotkey.Text.Trim();
+            _config.Broadcast.ToggleModeHotkey = TxtBroadcastModeHotkey.Text.Trim();
+            _config.Broadcast.InputEngine = CmbBroadcastEngine.SelectedItem?.ToString() ?? "LegacyWindowMessages";
+            _config.Broadcast.MouseTransformMode = "Viewport";
+            _config.Broadcast.UseRepeaterRegions = false;
+            _config.Broadcast.SourceRepeaterRegion = "";
+            _config.Broadcast.TargetRepeaterRegion = "";
+
+            _config.WindowLayout.Enabled = ChkSwapLayout.IsChecked == true;
+            _config.WindowLayout.UseRegionModel = false;
+            _config.WindowLayout.InstantSwap = true;
+            _config.WindowLayout.ForegroundRegion = "";
+            _config.WindowLayout.BackgroundRegion = "";
+            if (CmbLayoutMonitor.SelectedItem is MonitorOption layoutMonitor)
+                _config.WindowLayout.GridMonitorDevice = layoutMonitor.DeviceName;
+
+            ConfigLoader.Save(_config);
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"Failed to persist settings on close: {ex.Message}");
+        }
     }
 
     private void OnHotkeyBoxKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -574,7 +789,8 @@ public partial class MainWindow : Window
             Id = accountId,
             Email = dialog.Email,
             Nickname = dialog.Nickname,
-            CredentialId = credentialId
+            CredentialId = credentialId,
+            Region = _config.Region
         });
 
         ConfigLoader.Save(_config);
@@ -660,29 +876,109 @@ public partial class MainWindow : Window
         }
         ConfigLoader.Save(_config);
         UpdateBroadcastStatusWindow();
+        UpdateBroadcastDiagnostics();
     }
 
     private void ToggleAccountClassic(AccountProfile account, bool enabled)
     {
         account.ClassicMode = enabled;
         ConfigLoader.Save(_config);
+        UpdateBroadcastDiagnostics();
     }
 
-    private void ToggleAccountLaunchMonitor(AccountProfile account, string deviceName)
+    private void ToggleAccountRegion(AccountProfile account, string regionName)
+    {
+        account.Region = regionName?.Trim() ?? "";
+        ConfigLoader.Save(_config);
+    }
+
+    private async void ToggleAccountLaunchMonitor(AccountProfile account, string deviceName)
     {
         account.LaunchMonitorDevice = deviceName ?? "";
         ConfigLoader.Save(_config);
+        UpdateBroadcastDiagnostics();
+        await ApplyMonitorSelectionToRunningAccountAsync(account);
+    }
+
+    private async Task ApplyMonitorSelectionToRunningAccountAsync(AccountProfile account)
+    {
+        if (account is null || string.IsNullOrWhiteSpace(account.Id))
+            return;
+
+        // Swap layout owns window placement; don't fight it here.
+        if (_config.WindowLayout.Enabled)
+            return;
+
+        if (!TryResolveAccountWindowHandle(account, out var handle))
+            return;
+
+        ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
+        FitWindowToConfiguredMonitorWorkArea(handle, account.LaunchMonitorDevice);
+        await Task.Delay(700);
+        FitWindowToConfiguredMonitorWorkArea(handle, account.LaunchMonitorDevice);
+
+        if (_windowMonitorStates.TryGetValue(account.Id, out var state))
+        {
+            var monitor = ProcessLauncher.GetMonitorHandle(handle);
+            if (monitor != IntPtr.Zero)
+                state.Monitor = monitor;
+
+            if (ProcessLauncher.TryGetWindowRect(handle, out var rect))
+                state.LastRect = rect;
+
+            state.LastMoveUtc = DateTime.UtcNow;
+        }
+    }
+
+    private bool TryResolveAccountWindowHandle(AccountProfile account, out IntPtr handle)
+    {
+        handle = IntPtr.Zero;
+        if (account is null)
+            return false;
+
+        if (_accountProcessIds.TryGetValue(account.Id, out var pid))
+        {
+            if (ProcessLauncher.TryGetProcessMainWindowHandle(pid, "D2R", out var bound))
+            {
+                handle = bound;
+                return true;
+            }
+
+            _accountProcessIds.Remove(account.Id);
+        }
+
+        foreach (var candidate in GetOrderedD2RHandles())
+        {
+            if (candidate == IntPtr.Zero)
+                continue;
+            if (!IsLikelyAccountTitleMatch(candidate, account))
+                continue;
+
+            handle = candidate;
+            var resolvedPid = ProcessLauncher.GetWindowProcessId(candidate);
+            if (resolvedPid != 0)
+                _accountProcessIds[account.Id] = resolvedPid;
+            return true;
+        }
+
+        return false;
     }
 
     private void ToggleBroadcastEnabled()
     {
+        var wasBroadcastActive = IsBroadcastActive(_config.Broadcast);
         _config.Broadcast.Enabled = !_config.Broadcast.Enabled;
         ConfigLoader.Save(_config);
         Dispatcher.Invoke(() =>
         {
             ChkBroadcastEnabled.IsChecked = _config.Broadcast.Enabled;
             UpdateBroadcastStatusWindow();
+            UpdateBroadcastDiagnostics();
             _broadcastManager.UpdateBroadcastState(_config.Broadcast);
+
+            var isBroadcastActive = IsBroadcastActive(_config.Broadcast);
+            if (_config.Broadcast.ActivationSoundEnabled && wasBroadcastActive != isBroadcastActive)
+                PlayBroadcastStateAlert(isBroadcastActive);
         });
     }
 
@@ -712,6 +1008,7 @@ public partial class MainWindow : Window
                 ChkBroadcastAll.IsChecked = broadcastAll;
                 LoadButtons();
                 UpdateBroadcastStatusWindow();
+                UpdateBroadcastDiagnostics();
             });
         }
 
@@ -736,6 +1033,41 @@ public partial class MainWindow : Window
         {
             if (_broadcastSelectionCache.TryGetValue(account.Id, out var enabled))
                 account.BroadcastEnabled = enabled;
+        }
+    }
+
+    private static bool IsBroadcastActive(BroadcastSettings settings)
+        => settings.Enabled && (settings.Keyboard || settings.Mouse);
+
+    private static void PlayBroadcastStateAlert(bool isActive)
+    {
+        _ = Task.Run(() =>
+        {
+            if (isActive)
+            {
+                TryPlayAlertTone(1319, 180);
+                TryPlayAlertTone(988, 180);
+                TryPlayAlertTone(1319, 220);
+                SystemSounds.Hand.Play();
+                return;
+            }
+
+            TryPlayAlertTone(880, 160);
+            TryPlayAlertTone(659, 180);
+            TryPlayAlertTone(523, 220);
+            SystemSounds.Asterisk.Play();
+        });
+    }
+
+    private static void TryPlayAlertTone(int frequency, int durationMs)
+    {
+        try
+        {
+            Console.Beep(frequency, durationMs);
+        }
+        catch
+        {
+            SystemSounds.Hand.Play();
         }
     }
 
@@ -778,6 +1110,50 @@ public partial class MainWindow : Window
     {
         EnsureBroadcastStatusWindow();
         _broadcastStatusWindow?.UpdateStatus(_config.Broadcast);
+    }
+
+    private void UpdateBroadcastDiagnostics()
+    {
+        if (!_config.Broadcast.DiagnosticsEnabled)
+        {
+            TxtBroadcastDiagnostics.Text = "";
+            return;
+        }
+
+        try
+        {
+            var sb = new StringBuilder();
+            var foreground = ProcessLauncher.GetForegroundWindowHandle();
+            var foregroundTitle = ProcessLauncher.GetWindowTitle(foreground);
+            ProcessLauncher.TryGetMonitorDeviceName(foreground, out var foregroundMonitor);
+            var isD2R = foreground != IntPtr.Zero && ProcessLauncher.IsWindowProcessName(foreground, "D2R");
+            sb.Append("Diagnostics: ");
+            sb.Append(isD2R ? "Foreground=D2R" : "Foreground=Other");
+            if (!string.IsNullOrWhiteSpace(foregroundTitle))
+                sb.Append($" ({foregroundTitle})");
+            if (!string.IsNullOrWhiteSpace(foregroundMonitor))
+                sb.Append($" @{foregroundMonitor}");
+
+            var targets = GetBroadcastTargets();
+            sb.Append($" | Targets={targets.Count}");
+
+            var details = new List<string>();
+            foreach (var target in targets.Take(4))
+            {
+                var title = ProcessLauncher.GetWindowTitle(target.Handle);
+                ProcessLauncher.TryGetMonitorDeviceName(target.Handle, out var monitor);
+                details.Add($"{title}@{monitor}");
+            }
+
+            if (details.Count > 0)
+                sb.Append(" | " + string.Join(" ; ", details));
+
+            TxtBroadcastDiagnostics.Text = sb.ToString();
+        }
+        catch
+        {
+            // keep diagnostics best-effort only
+        }
     }
 
     private void EnsureOverlayVisible()
@@ -873,6 +1249,7 @@ public partial class MainWindow : Window
         if (_config.WindowLayout.Enabled)
         {
             UpdateSwapLayout();
+            UpdateBroadcastDiagnostics();
             return;
         }
 
@@ -920,6 +1297,7 @@ public partial class MainWindow : Window
                 }
             }
         }
+        UpdateBroadcastDiagnostics();
     }
 
     private void UpdateSwapLayout()
@@ -949,10 +1327,11 @@ public partial class MainWindow : Window
 
         var handleCount = handles.Count;
         var gridDevice = gridScreen.DeviceName;
+        var foregroundChanged = foregroundD2R != _lastLayoutForegroundHandle;
         var shouldLayout =
             handleCount != _lastLayoutHandleCount ||
             !string.Equals(gridDevice, _lastLayoutGridDevice, StringComparison.OrdinalIgnoreCase) ||
-            foregroundD2R != _lastLayoutForegroundHandle ||
+            (_config.WindowLayout.InstantSwap && foregroundChanged) ||
             (DateTime.UtcNow - _lastLayoutUtc).TotalSeconds > 2;
 
         _lastLayoutHandleCount = handleCount;
@@ -964,7 +1343,13 @@ public partial class MainWindow : Window
             return;
 
         ProcessLauncher.TryApplyBorderlessStyle(_primaryWindowHandle, allowResize: false);
-        var primaryRect = RectFromWorkingArea(primaryScreen.WorkingArea);
+        var primaryWork = primaryScreen.WorkingArea;
+        if (_config.WindowLayout.UseRegionModel &&
+            TryApplyNormalizedRegion(primaryWork, _config.WindowLayout.ForegroundRegion, out var primaryRegion))
+        {
+            primaryWork = primaryRegion;
+        }
+        var primaryRect = RectFromWorkingArea(primaryWork);
         MoveWindowIfNeeded(_primaryWindowHandle, primaryRect);
 
         var gridHandles = handles.Where(h => h != _primaryWindowHandle).ToList();
@@ -974,7 +1359,14 @@ public partial class MainWindow : Window
         if (string.Equals(gridScreen.DeviceName, primaryScreen.DeviceName, StringComparison.OrdinalIgnoreCase))
             return;
 
-        var gridRects = LayoutGrid(gridHandles.Count, gridScreen.WorkingArea, GridAspectRatio);
+        var gridWork = gridScreen.WorkingArea;
+        if (_config.WindowLayout.UseRegionModel &&
+            TryApplyNormalizedRegion(gridWork, _config.WindowLayout.BackgroundRegion, out var backgroundRegion))
+        {
+            gridWork = backgroundRegion;
+        }
+
+        var gridRects = LayoutGrid(gridHandles.Count, gridWork, GridAspectRatio);
         for (var i = 0; i < gridHandles.Count; i++)
         {
             var handle = gridHandles[i];
@@ -1008,6 +1400,46 @@ public partial class MainWindow : Window
             string.Equals(s.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool TryApplyNormalizedRegion(System.Drawing.Rectangle baseRect, string spec, out System.Drawing.Rectangle result)
+    {
+        result = baseRect;
+        if (string.IsNullOrWhiteSpace(spec))
+            return false;
+
+        var parts = spec.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 4)
+            return false;
+
+        if (!double.TryParse(parts[0], out var x) ||
+            !double.TryParse(parts[1], out var y) ||
+            !double.TryParse(parts[2], out var w) ||
+            !double.TryParse(parts[3], out var h))
+            return false;
+
+        x = Math.Clamp(x, 0, 1);
+        y = Math.Clamp(y, 0, 1);
+        w = Math.Clamp(w, 0.01, 1);
+        h = Math.Clamp(h, 0.01, 1);
+        if (x + w > 1)
+            w = 1 - x;
+        if (y + h > 1)
+            h = 1 - y;
+        if (w <= 0 || h <= 0)
+            return false;
+
+        var left = baseRect.Left + (int)Math.Round(baseRect.Width * x);
+        var top = baseRect.Top + (int)Math.Round(baseRect.Height * y);
+        var width = Math.Max(1, (int)Math.Round(baseRect.Width * w));
+        var height = Math.Max(1, (int)Math.Round(baseRect.Height * h));
+        if (left + width > baseRect.Right)
+            width = Math.Max(1, baseRect.Right - left);
+        if (top + height > baseRect.Bottom)
+            height = Math.Max(1, baseRect.Bottom - top);
+
+        result = new System.Drawing.Rectangle(left, top, width, height);
+        return true;
+    }
+
     private static void FitWindowToConfiguredMonitorWorkArea(IntPtr handle, string? monitorDeviceName)
     {
         var screen = GetScreenByDeviceName(monitorDeviceName);
@@ -1017,7 +1449,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var target = RectFromWorkingArea(screen.WorkingArea);
+        var target = RectFromWorkingArea(screen.Bounds);
         ProcessLauncher.MoveWindowToRect(handle, target, noActivate: true);
     }
 
@@ -1108,17 +1540,39 @@ public partial class MainWindow : Window
         var ordered = new List<IntPtr>();
         var seen = new HashSet<IntPtr>();
 
-        foreach (var account in _config.Accounts)
+        for (var i = 0; i < _config.Accounts.Count; i++)
         {
+            var account = _config.Accounts[i];
             IntPtr handle = IntPtr.Zero;
+
+            // Strong anchor: first account (driver/manual client) prefers the default D2R title.
+            if (i == 0)
+            {
+                var driverHandles = BroadcastManager.FindWindowsByTitleExact(DriverWindowTitle)
+                    .Where(h => h != IntPtr.Zero && ProcessLauncher.IsWindowProcessName(h, "D2R"))
+                    .ToList();
+                if (driverHandles.Count > 0)
+                    handle = driverHandles[0];
+            }
+
             if (_accountProcessIds.TryGetValue(account.Id, out var pid))
-                handle = ProcessLauncher.TryGetMainWindowHandle(pid);
+            {
+                if (ProcessLauncher.TryGetProcessMainWindowHandle(pid, "D2R", out var bound))
+                {
+                    if (handle == IntPtr.Zero)
+                        handle = bound;
+                }
+                else
+                {
+                    _accountProcessIds.Remove(account.Id);
+                }
+            }
 
             if (handle == IntPtr.Zero && (!string.IsNullOrWhiteSpace(account.Nickname) || !string.IsNullOrWhiteSpace(account.Email)))
             {
                 var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
                 var matches = BroadcastManager.FindWindowsByTitleExact(title);
-                if (matches.Count > 0)
+                if (matches.Count > 0 && ProcessLauncher.IsWindowProcessName(matches[0], "D2R"))
                     handle = matches[0];
             }
 
@@ -1142,14 +1596,14 @@ public partial class MainWindow : Window
 
     private IReadOnlyList<BroadcastManager.BroadcastTarget> GetBroadcastTargets()
     {
-        EnsureDriverWindowBound();
         var foreground = ProcessLauncher.GetForegroundWindowHandle();
+        var allD2RHandles = GetOrderedD2RHandles();
 
         if (_config.Broadcast.BroadcastAll)
         {
-            var handles = ProcessLauncher.GetMainWindowHandlesByProcessName("D2R");
+            EnsureDriverWindowBound();
             var targets = new List<BroadcastManager.BroadcastTarget>();
-            foreach (var handle in handles)
+            foreach (var handle in allD2RHandles)
             {
                 targets.Add(new BroadcastManager.BroadcastTarget(handle, IsClassicModeWindow(handle)));
             }
@@ -1157,6 +1611,7 @@ public partial class MainWindow : Window
         }
 
         var selectedAccounts = _config.Accounts.Where(a => a.BroadcastEnabled).ToList();
+        var includeMainWindowInSelected = _config.Broadcast.IncludeMainWindowInSelected;
         var targetsList = new List<BroadcastManager.BroadcastTarget>();
         var seenHandles = new HashSet<IntPtr>();
         var unresolvedAccounts = new List<AccountProfile>();
@@ -1164,30 +1619,52 @@ public partial class MainWindow : Window
         foreach (var account in selectedAccounts)
         {
             var resolved = false;
+
+            // Prefer exact title matches first for selected mode.
+            if (!string.IsNullOrWhiteSpace(account.Nickname) || !string.IsNullOrWhiteSpace(account.Email))
+            {
+                var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
+                foreach (var handle in BroadcastManager.FindWindowsByTitleExact(title))
+                {
+                    if (handle == IntPtr.Zero || handle == foreground || seenHandles.Contains(handle))
+                        continue;
+                    if (!ProcessLauncher.IsWindowProcessName(handle, "D2R"))
+                        continue;
+                    if (!includeMainWindowInSelected && IsMainDriverWindowHandle(handle))
+                        continue;
+
+                    seenHandles.Add(handle);
+                    targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
+                    resolved = true;
+                    break;
+                }
+            }
+
             if (_accountProcessIds.TryGetValue(account.Id, out var pid))
             {
-                var handle = ProcessLauncher.TryGetMainWindowHandle(pid);
-                if (handle == IntPtr.Zero)
+                if (!ProcessLauncher.TryGetProcessMainWindowHandle(pid, "D2R", out var handle))
                 {
                     _accountProcessIds.Remove(account.Id);
                 }
-                else if (handle != foreground && seenHandles.Add(handle))
+                else if (!resolved &&
+                         handle != foreground &&
+                         !seenHandles.Contains(handle) &&
+                         (includeMainWindowInSelected || !IsMainDriverWindowHandle(handle)) &&
+                         IsHandleLikelyForAccount(handle, account))
                 {
+                    seenHandles.Add(handle);
                     targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
                     resolved = true;
                 }
             }
 
-            if (!resolved && (!string.IsNullOrWhiteSpace(account.Nickname) || !string.IsNullOrWhiteSpace(account.Email)))
+            if (!resolved)
             {
-                var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
-                foreach (var handle in BroadcastManager.FindWindowsByTitleExact(title))
+                var best = FindBestHandleForAccount(account, allD2RHandles, foreground, seenHandles, includeMainWindowInSelected);
+                if (best != IntPtr.Zero && seenHandles.Add(best))
                 {
-                    if (handle != IntPtr.Zero && handle != foreground && seenHandles.Add(handle))
-                    {
-                        targetsList.Add(new BroadcastManager.BroadcastTarget(handle, account.ClassicMode));
-                        resolved = true;
-                    }
+                    targetsList.Add(new BroadcastManager.BroadcastTarget(best, account.ClassicMode));
+                    resolved = true;
                 }
             }
 
@@ -1197,24 +1674,73 @@ public partial class MainWindow : Window
 
         if (unresolvedAccounts.Count > 0)
         {
-            // Fallback when PID/title binding fails (common after restart or title changes):
-            // pair unresolved selected accounts with non-foreground D2R windows first.
-            var orderedHandles = GetOrderedD2RHandles()
-                .Where(h => h != IntPtr.Zero && h != foreground && !seenHandles.Contains(h))
-                .ToList();
-
-            var count = Math.Min(unresolvedAccounts.Count, orderedHandles.Count);
-            for (var i = 0; i < count; i++)
-            {
-                var handle = orderedHandles[i];
-                if (handle == IntPtr.Zero || !seenHandles.Add(handle))
-                    continue;
-
-                targetsList.Add(new BroadcastManager.BroadcastTarget(handle, unresolvedAccounts[i].ClassicMode));
-            }
+            var unresolvedLabels = unresolvedAccounts
+                .Select(a => string.IsNullOrWhiteSpace(a.Nickname) ? a.Email : a.Nickname)
+                .Where(s => !string.IsNullOrWhiteSpace(s));
+            var joined = string.Join(", ", unresolvedLabels);
+            Log.Info($"Selected broadcast skipped unresolved accounts (no safe window match): {joined}");
         }
 
         return targetsList;
+    }
+
+    private static IntPtr FindBestHandleForAccount(
+        AccountProfile account,
+        IReadOnlyList<IntPtr> allD2RHandles,
+        IntPtr foreground,
+        HashSet<IntPtr> seenHandles,
+        bool includeMainWindowInSelected)
+    {
+        var candidates = allD2RHandles
+            .Where(h =>
+                h != IntPtr.Zero &&
+                h != foreground &&
+                !seenHandles.Contains(h) &&
+                ProcessLauncher.IsWindowProcessName(h, "D2R") &&
+                (includeMainWindowInSelected || !IsMainDriverWindowHandle(h)))
+            .ToList();
+        if (candidates.Count == 0)
+            return IntPtr.Zero;
+
+        var onPreferred = candidates
+            .Where(h => IsOnPreferredMonitor(h, account.LaunchMonitorDevice))
+            .ToList();
+
+        foreach (var handle in onPreferred)
+        {
+            if (IsExactAccountTitleMatch(handle, account))
+                return handle;
+        }
+
+        foreach (var handle in candidates)
+        {
+            if (IsExactAccountTitleMatch(handle, account))
+                return handle;
+        }
+
+        foreach (var handle in onPreferred)
+        {
+            if (IsLikelyAccountTitleMatch(handle, account))
+                return handle;
+        }
+
+        foreach (var handle in candidates)
+        {
+            if (IsLikelyAccountTitleMatch(handle, account))
+                return handle;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private static bool IsMainDriverWindowHandle(IntPtr handle)
+    {
+        if (handle == IntPtr.Zero)
+            return false;
+        if (!ProcessLauncher.IsWindowProcessName(handle, "D2R"))
+            return false;
+        var title = ProcessLauncher.GetWindowTitle(handle).Trim();
+        return string.Equals(title, DriverWindowTitle, StringComparison.OrdinalIgnoreCase);
     }
 
     private void EnsureDriverWindowBound()
@@ -1223,8 +1749,38 @@ public partial class MainWindow : Window
             return;
 
         var driver = _config.Accounts[0];
-        if (_accountProcessIds.ContainsKey(driver.Id))
-            return;
+        if (_accountProcessIds.TryGetValue(driver.Id, out var boundPid))
+        {
+            if (ProcessLauncher.IsProcessIdForName(boundPid, "D2R"))
+                return;
+            _accountProcessIds.Remove(driver.Id);
+        }
+
+        var defaultTitleHandles = BroadcastManager.FindWindowsByTitleExact(DriverWindowTitle)
+            .Where(h => h != IntPtr.Zero && ProcessLauncher.IsWindowProcessName(h, "D2R"))
+            .ToList();
+        if (defaultTitleHandles.Count > 0)
+        {
+            var titlePid = ProcessLauncher.GetWindowProcessId(defaultTitleHandles[0]);
+            if (titlePid != 0)
+            {
+                _accountProcessIds[driver.Id] = titlePid;
+                Log.Info($"Bound driver window by default title to account: {driver.Email}");
+                return;
+            }
+        }
+
+        var foreground = ProcessLauncher.GetForegroundWindowHandle();
+        if (foreground != IntPtr.Zero && ProcessLauncher.IsWindowProcessName(foreground, "D2R"))
+        {
+            var foregroundPid = ProcessLauncher.GetWindowProcessId(foreground);
+            if (foregroundPid != 0 && !_accountProcessIds.Values.Contains(foregroundPid))
+            {
+                _accountProcessIds[driver.Id] = foregroundPid;
+                Log.Info($"Bound driver window from foreground D2R to account: {driver.Email}");
+                return;
+            }
+        }
 
         var handles = BroadcastManager.FindWindowsByTitleExact(DriverWindowTitle);
         if (handles.Count == 0)
@@ -1236,6 +1792,80 @@ public partial class MainWindow : Window
 
         _accountProcessIds[driver.Id] = pid;
         Log.Info($"Bound driver window to account: {driver.Email}");
+    }
+
+    private static bool IsLikelyAccountTitleMatch(IntPtr handle, AccountProfile account)
+    {
+        if (handle == IntPtr.Zero)
+            return false;
+
+        var title = ProcessLauncher.GetWindowTitle(handle).Trim();
+        if (string.IsNullOrWhiteSpace(title))
+            return false;
+
+        var nickname = account.Nickname?.Trim() ?? "";
+        if (!string.IsNullOrWhiteSpace(nickname) &&
+            string.Equals(title, nickname, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var email = account.Email?.Trim() ?? "";
+        if (!string.IsNullOrWhiteSpace(email) &&
+            string.Equals(title, email, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(nickname) &&
+            title.Contains(nickname, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(email) &&
+            title.Contains(email, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    private static bool IsExactAccountTitleMatch(IntPtr handle, AccountProfile account)
+    {
+        if (handle == IntPtr.Zero)
+            return false;
+
+        var title = ProcessLauncher.GetWindowTitle(handle).Trim();
+        if (string.IsNullOrWhiteSpace(title))
+            return false;
+
+        var nickname = account.Nickname?.Trim() ?? "";
+        if (!string.IsNullOrWhiteSpace(nickname) &&
+            string.Equals(title, nickname, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var email = account.Email?.Trim() ?? "";
+        if (!string.IsNullOrWhiteSpace(email) &&
+            string.Equals(title, email, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    private static bool IsHandleLikelyForAccount(IntPtr handle, AccountProfile account)
+    {
+        if (handle == IntPtr.Zero)
+            return false;
+
+        if (IsExactAccountTitleMatch(handle, account))
+            return true;
+
+        return IsLikelyAccountTitleMatch(handle, account);
+    }
+
+    private static bool IsOnPreferredMonitor(IntPtr handle, string preferredDeviceName)
+    {
+        if (handle == IntPtr.Zero || string.IsNullOrWhiteSpace(preferredDeviceName))
+            return false;
+
+        if (!ProcessLauncher.TryGetMonitorDeviceName(handle, out var deviceName))
+            return false;
+
+        return string.Equals(deviceName, preferredDeviceName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsForegroundD2R()
@@ -1362,12 +1992,12 @@ public partial class MainWindow : Window
             Log.Info($"Clicked: {account.Email}");
             var config = ConfigLoader.LoadOrCreate();
 
-            var region = RegionOptions.FindByName(config.Region);
-            if (region is null)
-                throw new InvalidOperationException("Select a region before launching.");
-
             if (string.IsNullOrWhiteSpace(config.InstallPath))
                 throw new InvalidOperationException("Select a valid install path before launching.");
+
+            var region = ResolveLaunchRegion(config, account);
+            if (region is null)
+                throw new InvalidOperationException("Select a region before launching.");
 
             var d2rExe = System.IO.Path.Combine(config.InstallPath, "D2R.exe");
             if (!File.Exists(d2rExe))
@@ -1448,24 +2078,12 @@ public partial class MainWindow : Window
             }
 
         ContinueLaunch:
-            var credential = CredentialStore.Read(account.CredentialId);
-            if (credential is null)
-                throw new InvalidOperationException("Stored credentials not found. Re-add the account.");
-
-            var args = BuildLaunchArguments(account.Email, credential.Value.Secret, region.Address);
             var displayName = string.IsNullOrWhiteSpace(account.Nickname) ? account.Email : account.Nickname;
-            Log.Info($"Launching: {d2rExe}");
-            var process = await LaunchD2RWithRetryAsync(d2rExe, args, config.InstallPath);
+            var process = await LaunchAccountProcessAsync(config, account, d2rExe, region.Address);
             if (process is not null)
                 _accountProcessIds[account.Id] = process.Id;
             await ProcessLauncher.TrySetWindowTitleAsync(process, displayName);
-            var handle = await ProcessLauncher.WaitForMainWindowHandleAsync(process);
-            if (handle != IntPtr.Zero)
-            {
-                ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
-                FitWindowToConfiguredMonitorWorkArea(handle, account.LaunchMonitorDevice);
-                await RefitWindowAsync(process, handle, account.LaunchMonitorDevice);
-            }
+            await ProcessLauncher.WaitForMainWindowHandleAsync(process);
             Log.Info("Launch triggered");
 
             SetStatus($"Done: {account.Email}");
@@ -1482,9 +2100,130 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task<Process?> LaunchAccountProcessAsync(LauncherConfig config, AccountProfile account, string d2rExe, string regionAddress)
+    {
+        var customLaunchPath = ResolveCustomLaunchPath(config, account);
+        if (!string.IsNullOrWhiteSpace(customLaunchPath))
+        {
+            Log.Info($"Launching via custom path: {customLaunchPath}");
+            var existingD2rIds = SnapshotProcessIds("D2R");
+            ProcessLauncher.LaunchShortcutOrFile(customLaunchPath);
+            var launched = await WaitForNewProcessAsync("D2R", existingD2rIds, 45000);
+            if (launched is null)
+                Log.Info("No new D2R process detected after custom launch; continuing with best-effort window binding.");
+            return launched;
+        }
+
+        var credential = CredentialStore.Read(account.CredentialId);
+        if (credential is null)
+            throw new InvalidOperationException("Stored credentials not found. Re-add the account.");
+
+        var args = BuildLaunchArguments(account.Email, credential.Value.Secret, regionAddress);
+        Log.Info($"Launching: {d2rExe}");
+        return await LaunchD2RWithRetryAsync(d2rExe, args, config.InstallPath);
+    }
+
+    private static string ResolveCustomLaunchPath(LauncherConfig config, AccountProfile account)
+    {
+        if (!string.IsNullOrWhiteSpace(account.LaunchPath))
+            return account.LaunchPath.Trim();
+
+        var profiles = config.Profiles ?? new List<LaunchProfile>();
+        if (profiles.Count == 0)
+            return "";
+
+        static LaunchProfile? FindByName(IEnumerable<LaunchProfile> candidates, string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                return null;
+
+            var trimmed = key.Trim();
+            return candidates.FirstOrDefault(p => string.Equals(p.Name?.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var byId = FindByName(profiles, account.Id);
+        if (!string.IsNullOrWhiteSpace(byId?.Path))
+            return byId.Path.Trim();
+
+        var byNickname = FindByName(profiles, account.Nickname);
+        if (!string.IsNullOrWhiteSpace(byNickname?.Path))
+            return byNickname.Path.Trim();
+
+        var byEmail = FindByName(profiles, account.Email);
+        if (!string.IsNullOrWhiteSpace(byEmail?.Path))
+            return byEmail.Path.Trim();
+
+        var accountIndex = config.Accounts.FindIndex(a => string.Equals(a.Id, account.Id, StringComparison.OrdinalIgnoreCase));
+        if (accountIndex >= 0 && accountIndex < profiles.Count && !string.IsNullOrWhiteSpace(profiles[accountIndex].Path))
+            return profiles[accountIndex].Path.Trim();
+
+        return "";
+    }
+
+    private static HashSet<int> SnapshotProcessIds(string processName)
+    {
+        var ids = new HashSet<int>();
+        try
+        {
+            foreach (var process in Process.GetProcessesByName(processName))
+                ids.Add(process.Id);
+        }
+        catch
+        {
+            // Best-effort only.
+        }
+
+        return ids;
+    }
+
+    private static async Task<Process?> WaitForNewProcessAsync(string processName, HashSet<int> existingIds, int timeoutMs, int pollMs = 250)
+    {
+        var timeout = Math.Max(1000, timeoutMs);
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < timeout)
+        {
+            try
+            {
+                var candidates = Process.GetProcessesByName(processName)
+                    .Where(p => !existingIds.Contains(p.Id))
+                    .ToList();
+                var launched = candidates
+                    .OrderByDescending(p =>
+                    {
+                        try { return p.StartTime; } catch { return DateTime.MinValue; }
+                    })
+                    .FirstOrDefault();
+
+                if (launched is not null)
+                    return launched;
+            }
+            catch
+            {
+                // Best-effort polling.
+            }
+
+            await Task.Delay(pollMs);
+        }
+
+        return null;
+    }
+
     private static string BuildLaunchArguments(string email, string password, string address)
     {
-        return $"-username {QuoteArg(email)} -password {QuoteArg(password)} -address {QuoteArg(address)} -w";
+        // Let D2R keep the user's in-game display mode (do not force windowed).
+        return $"-username {QuoteArg(email)} -password {QuoteArg(password)} -address {QuoteArg(address)}";
+    }
+
+    private static RegionOption? ResolveLaunchRegion(LauncherConfig config, AccountProfile account)
+    {
+        if (account is not null && !string.IsNullOrWhiteSpace(account.Region))
+        {
+            var perAccount = RegionOptions.FindByName(account.Region);
+            if (perAccount is not null)
+                return perAccount;
+        }
+
+        return RegionOptions.FindByName(config.Region);
     }
 
     private static string QuoteArg(string value)

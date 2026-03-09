@@ -30,11 +30,18 @@ public sealed class LauncherConfig
         Region ??= "";
         Accounts ??= new List<AccountProfile>();
         foreach (var account in Accounts)
+        {
             account.LaunchMonitorDevice ??= "";
+            account.LaunchPath ??= "";
+            account.Region ??= "";
+        }
         Profiles ??= new List<LaunchProfile>();
         Broadcast ??= new BroadcastSettings();
         WindowLayout ??= new WindowLayoutSettings();
         WindowLayout.GridMonitorDevice ??= "";
+        WindowLayout.ForegroundRegion ??= "";
+        WindowLayout.BackgroundRegion ??= "";
+        WindowLayout.ResetRegion ??= "";
         PreLaunch.HandlePath ??= "";
         if (!Broadcast.DefaultsApplied || !Broadcast.Keyboard || !Broadcast.Mouse)
         {
@@ -47,6 +54,10 @@ public sealed class LauncherConfig
             Broadcast.OverlayLeft = null;
         if (Broadcast.OverlayTop.HasValue && (double.IsNaN(Broadcast.OverlayTop.Value) || double.IsInfinity(Broadcast.OverlayTop.Value)))
             Broadcast.OverlayTop = null;
+        Broadcast.InputEngine = string.IsNullOrWhiteSpace(Broadcast.InputEngine) ? "LegacyWindowMessages" : Broadcast.InputEngine.Trim();
+        Broadcast.MouseTransformMode = string.IsNullOrWhiteSpace(Broadcast.MouseTransformMode) ? "Viewport" : Broadcast.MouseTransformMode.Trim();
+        Broadcast.SourceRepeaterRegion ??= "";
+        Broadcast.TargetRepeaterRegion ??= "";
         UpdateToken ??= "";
     }
 }
@@ -64,6 +75,8 @@ public sealed class AccountProfile
     public string Nickname { get; set; } = "";
     public string Email { get; set; } = "";
     public string CredentialId { get; set; } = "";
+    public string LaunchPath { get; set; } = "";
+    public string Region { get; set; } = "";
     public bool BroadcastEnabled { get; set; } = true;
     public bool ClassicMode { get; set; } = false;
     public string LaunchMonitorDevice { get; set; } = "";
@@ -73,6 +86,8 @@ public sealed class BroadcastSettings
 {
     public bool Enabled { get; set; } = false;
     public bool BroadcastAll { get; set; } = true;
+    public bool IncludeMainWindowInSelected { get; set; } = false;
+    public bool ActivationSoundEnabled { get; set; } = true;
     public bool Keyboard { get; set; } = true;
     public bool Mouse { get; set; } = true;
     public bool VerticalMonitorStackMode { get; set; } = false;
@@ -82,18 +97,52 @@ public sealed class BroadcastSettings
     public bool OverlayLocked { get; set; } = false;
     public double? OverlayLeft { get; set; }
     public double? OverlayTop { get; set; }
+    // Broadcast backend: LegacyWindowMessages | IsbStyleProcessFanout
+    public string InputEngine { get; set; } = "LegacyWindowMessages";
+    // Conservative default keeps current behavior.
+    public string MouseTransformMode { get; set; } = "Viewport";
+    // Optional normalized regions "x,y,w,h" in 0..1 space.
+    public bool UseRepeaterRegions { get; set; } = false;
+    public string SourceRepeaterRegion { get; set; } = "";
+    public string TargetRepeaterRegion { get; set; } = "";
+    public bool DiagnosticsEnabled { get; set; } = true;
 }
 
 public sealed class WindowLayoutSettings
 {
     public bool Enabled { get; set; } = false;
     public string GridMonitorDevice { get; set; } = "";
+    // Optional normalized regions "x,y,w,h" for swap-state style layouts.
+    public bool UseRegionModel { get; set; } = false;
+    public string ForegroundRegion { get; set; } = "";
+    public string BackgroundRegion { get; set; } = "";
+    public string ResetRegion { get; set; } = "";
+    public bool InstantSwap { get; set; } = true;
 }
 
 public sealed class LaunchProfile
 {
     public string Name { get; set; } = "";
     public string Path { get; set; } = "";
+}
+
+public sealed class LayoutBroadcastProfile
+{
+    public string Name { get; set; } = "";
+    public DateTime ExportedAtUtc { get; set; } = DateTime.UtcNow;
+    public BroadcastSettings Broadcast { get; set; } = new();
+    public WindowLayoutSettings WindowLayout { get; set; } = new();
+    public List<AccountLayoutBroadcastBinding> Accounts { get; set; } = new();
+}
+
+public sealed class AccountLayoutBroadcastBinding
+{
+    public string Id { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Nickname { get; set; } = "";
+    public bool BroadcastEnabled { get; set; } = true;
+    public bool ClassicMode { get; set; } = false;
+    public string LaunchMonitorDevice { get; set; } = "";
 }
 
 public static class ConfigLoader
@@ -192,12 +241,17 @@ public static class ProcessLauncher
     private const string D2RKillaScriptName = "D2RKilla.ps1";
     private const uint MonitorDefaultToNearest = 2;
     private const int GwlStyle = -16;
+    private const int GwlExStyle = -20;
+    private const uint WsExToolWindow = 0x00000080;
+    private const uint GwOwner = 4;
     private const int SwpNoZOrder = 0x0004;
     private const int SwpNoActivate = 0x0010;
     private const int SwpFrameChanged = 0x0020;
     private const uint WsCaption = 0x00C00000;
     private const uint WsThickFrame = 0x00040000;
     private const uint WsMaximizeBox = 0x00010000;
+    private const uint WsExWindowEdge = 0x00000100;
+    private const uint WsExClientEdge = 0x00000200;
     public const int DefaultMonitorCheckIntervalMs = 750;
     public const int DefaultMoveDebounceMs = 500;
     public const int DefaultPreLaunchTimeoutMs = 20000;
@@ -252,6 +306,7 @@ public static class ProcessLauncher
             UseShellExecute = true
         });
     }
+
 
     public static bool IsProcessRunning(string processName)
     {
@@ -444,6 +499,36 @@ public static class ProcessLauncher
         return results;
     }
 
+    public static bool IsProcessIdForName(int processId, string processName)
+    {
+        if (processId <= 0 || string.IsNullOrWhiteSpace(processName))
+            return false;
+
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return string.Equals(process.ProcessName, processName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+
+    public static bool TryGetProcessMainWindowHandle(int processId, string processName, out IntPtr handle)
+    {
+        handle = IntPtr.Zero;
+        if (!IsProcessIdForName(processId, processName))
+            return false;
+
+        handle = TryGetMainWindowHandle(processId);
+        if (handle == IntPtr.Zero)
+            return false;
+
+        return IsWindowProcessName(handle, processName);
+    }
+
     public static IntPtr GetMonitorHandle(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)
@@ -474,17 +559,47 @@ public static class ProcessLauncher
         return true;
     }
 
+    public static bool TryGetMonitorBounds(IntPtr hwnd, out Rect bounds)
+    {
+        bounds = new Rect();
+        var monitor = GetMonitorHandle(hwnd);
+        if (monitor == IntPtr.Zero)
+            return false;
+
+        var info = new MonitorInfo { cbSize = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info))
+            return false;
+
+        bounds = info.rcMonitor;
+        return true;
+    }
+
+    public static bool TryGetMonitorDeviceName(IntPtr hwnd, out string deviceName)
+    {
+        deviceName = "";
+        var monitor = GetMonitorHandle(hwnd);
+        if (monitor == IntPtr.Zero)
+            return false;
+
+        var info = new MonitorInfoEx { cbSize = Marshal.SizeOf<MonitorInfoEx>() };
+        if (!GetMonitorInfo(monitor, ref info))
+            return false;
+
+        deviceName = info.szDevice?.TrimEnd('\0') ?? "";
+        return !string.IsNullOrWhiteSpace(deviceName);
+    }
+
     public static void FitWindowToMonitorWorkArea(IntPtr hwnd)
     {
-        if (!TryGetMonitorWorkArea(hwnd, out var workArea))
+        if (!TryGetMonitorBounds(hwnd, out var monitorBounds))
             return;
 
-        var width = workArea.Right - workArea.Left;
-        var height = workArea.Bottom - workArea.Top;
+        var width = monitorBounds.Right - monitorBounds.Left;
+        var height = monitorBounds.Bottom - monitorBounds.Top;
         if (width <= 0 || height <= 0)
             return;
 
-        SetWindowPos(hwnd, IntPtr.Zero, workArea.Left, workArea.Top, width, height, SwpNoZOrder | SwpNoActivate);
+        SetWindowPos(hwnd, IntPtr.Zero, monitorBounds.Left, monitorBounds.Top, width, height, SwpNoZOrder | SwpNoActivate);
     }
 
     public static void FitWindowToPrimaryWorkArea(IntPtr hwnd)
@@ -492,16 +607,16 @@ public static class ProcessLauncher
         if (hwnd == IntPtr.Zero)
             return;
 
-        var workArea = Screen.PrimaryScreen?.WorkingArea;
-        if (workArea is null)
+        var primaryBounds = Screen.PrimaryScreen?.Bounds;
+        if (primaryBounds is null)
             return;
 
-        var width = workArea.Value.Width;
-        var height = workArea.Value.Height;
+        var width = primaryBounds.Value.Width;
+        var height = primaryBounds.Value.Height;
         if (width <= 0 || height <= 0)
             return;
 
-        SetWindowPos(hwnd, IntPtr.Zero, workArea.Value.Left, workArea.Value.Top, width, height, SwpNoZOrder | SwpNoActivate);
+        SetWindowPos(hwnd, IntPtr.Zero, primaryBounds.Value.Left, primaryBounds.Value.Top, width, height, SwpNoZOrder | SwpNoActivate);
     }
 
     public static void MoveWindowToRect(IntPtr hwnd, Rect rect, bool noActivate)
@@ -561,19 +676,48 @@ public static class ProcessLauncher
         }
 
         SetWindowLongPtr(hwnd, GwlStyle, new IntPtr(unchecked((int)styleValue)));
+        var exStyleValue = unchecked((uint)GetWindowLongPtr(hwnd, GwlExStyle).ToInt64());
+        exStyleValue &= ~WsExWindowEdge;
+        exStyleValue &= ~WsExClientEdge;
+        SetWindowLongPtr(hwnd, GwlExStyle, new IntPtr(unchecked((int)exStyleValue)));
         SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
     }
 
     public static IntPtr TryGetMainWindowHandle(int processId)
     {
         IntPtr found = IntPtr.Zero;
+        var bestArea = -1L;
         EnumWindows((hwnd, lParam) =>
         {
             GetWindowThreadProcessId(hwnd, out var pid);
-            if (pid == processId && IsWindowVisible(hwnd))
+            if (pid != processId)
+                return true;
+            if (!IsWindowVisible(hwnd) || IsIconic(hwnd))
+                return true;
+            if (GetWindow(hwnd, GwOwner) != IntPtr.Zero)
+                return true;
+
+            var exStyle = unchecked((uint)GetWindowLongPtr(hwnd, GwlExStyle).ToInt64());
+            if ((exStyle & WsExToolWindow) != 0)
+                return true;
+
+            if (!GetWindowRect(hwnd, out var rect))
+                return true;
+
+            var width = rect.Right - rect.Left;
+            var height = rect.Bottom - rect.Top;
+            var area = (long)Math.Max(0, width) * Math.Max(0, height);
+            if (area <= 0)
+                return true;
+
+            var titleLength = GetWindowTextLength(hwnd);
+            // Prefer titled primary surfaces, then largest area as fallback.
+            var bonus = titleLength > 0 ? 1_000_000_000L : 0L;
+            var score = area + bonus;
+            if (score > bestArea)
             {
                 found = hwnd;
-                return false;
+                bestArea = score;
             }
             return true;
         }, IntPtr.Zero);
@@ -786,6 +930,18 @@ public static class ProcessLauncher
         public int dwFlags;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct MonitorInfoEx
+    {
+        public int cbSize;
+        public Rect rcMonitor;
+        public Rect rcWork;
+        public int dwFlags;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string szDevice;
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool SetWindowText(IntPtr hWnd, string lpString);
 
@@ -821,6 +977,9 @@ public static class ProcessLauncher
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
 
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfoEx lpmi);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool GetWindowRect(IntPtr hWnd, out Rect lpRect);
 
@@ -832,6 +991,12 @@ public static class ProcessLauncher
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
     private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
 }
 
 public static class Defaults
