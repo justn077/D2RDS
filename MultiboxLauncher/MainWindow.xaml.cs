@@ -39,6 +39,8 @@ public partial class MainWindow : Window
     private string _lastLayoutGridDevice = "";
     private IntPtr _lastLayoutForegroundHandle;
     private DateTime _lastLayoutUtc = DateTime.MinValue;
+    private DateTime _lastUnresolvedBroadcastLogUtc = DateTime.MinValue;
+    private string _lastUnresolvedBroadcastLog = "";
     private const double GridAspectRatio = 16.0 / 9.0;
 
     private sealed class WindowMonitorState
@@ -911,6 +913,8 @@ public partial class MainWindow : Window
 
         if (!TryResolveAccountWindowHandle(account, out var handle))
             return;
+        if (!ProcessLauncher.IsWindowResponsive(handle))
+            return;
 
         ProcessLauncher.TryApplyBorderlessStyle(handle, allowResize: false);
         FitWindowToConfiguredMonitorWorkArea(handle, account.LaunchMonitorDevice);
@@ -1262,6 +1266,8 @@ public partial class MainWindow : Window
             var hwnd = ProcessLauncher.TryGetMainWindowHandle(pid);
             if (hwnd == IntPtr.Zero)
                 continue;
+            if (!ProcessLauncher.IsWindowResponsive(hwnd))
+                continue;
 
             var monitor = ProcessLauncher.GetMonitorHandle(hwnd);
             if (monitor == IntPtr.Zero)
@@ -1535,6 +1541,13 @@ public partial class MainWindow : Window
         return targetRects;
     }
 
+    private static bool IsDeliverableD2RWindow(IntPtr handle)
+    {
+        return handle != IntPtr.Zero &&
+               ProcessLauncher.IsWindowProcessName(handle, "D2R") &&
+               ProcessLauncher.IsWindowResponsive(handle);
+    }
+
     private IReadOnlyList<IntPtr> GetOrderedD2RHandles()
     {
         var ordered = new List<IntPtr>();
@@ -1549,7 +1562,7 @@ public partial class MainWindow : Window
             if (i == 0)
             {
                 var driverHandles = BroadcastManager.FindWindowsByTitleExact(DriverWindowTitle)
-                    .Where(h => h != IntPtr.Zero && ProcessLauncher.IsWindowProcessName(h, "D2R"))
+                    .Where(IsDeliverableD2RWindow)
                     .ToList();
                 if (driverHandles.Count > 0)
                     handle = driverHandles[0];
@@ -1572,17 +1585,17 @@ public partial class MainWindow : Window
             {
                 var title = !string.IsNullOrWhiteSpace(account.Nickname) ? account.Nickname : account.Email;
                 var matches = BroadcastManager.FindWindowsByTitleExact(title);
-                if (matches.Count > 0 && ProcessLauncher.IsWindowProcessName(matches[0], "D2R"))
+                if (matches.Count > 0 && IsDeliverableD2RWindow(matches[0]))
                     handle = matches[0];
             }
 
-            if (handle != IntPtr.Zero && seen.Add(handle))
+            if (IsDeliverableD2RWindow(handle) && seen.Add(handle))
                 ordered.Add(handle);
         }
 
         foreach (var handle in ProcessLauncher.GetMainWindowHandlesByProcessName("D2R"))
         {
-            if (handle != IntPtr.Zero && seen.Add(handle))
+            if (IsDeliverableD2RWindow(handle) && seen.Add(handle))
                 ordered.Add(handle);
         }
 
@@ -1605,6 +1618,8 @@ public partial class MainWindow : Window
             var targets = new List<BroadcastManager.BroadcastTarget>();
             foreach (var handle in allD2RHandles)
             {
+                if (!IsDeliverableD2RWindow(handle))
+                    continue;
                 targets.Add(new BroadcastManager.BroadcastTarget(handle, IsClassicModeWindow(handle)));
             }
             return targets;
@@ -1628,7 +1643,7 @@ public partial class MainWindow : Window
                 {
                     if (handle == IntPtr.Zero || handle == foreground || seenHandles.Contains(handle))
                         continue;
-                    if (!ProcessLauncher.IsWindowProcessName(handle, "D2R"))
+                    if (!IsDeliverableD2RWindow(handle))
                         continue;
                     if (!includeMainWindowInSelected && IsMainDriverWindowHandle(handle))
                         continue;
@@ -1649,6 +1664,7 @@ public partial class MainWindow : Window
                 else if (!resolved &&
                          handle != foreground &&
                          !seenHandles.Contains(handle) &&
+                         IsDeliverableD2RWindow(handle) &&
                          (includeMainWindowInSelected || !IsMainDriverWindowHandle(handle)) &&
                          IsHandleLikelyForAccount(handle, account))
                 {
@@ -1678,7 +1694,14 @@ public partial class MainWindow : Window
                 .Select(a => string.IsNullOrWhiteSpace(a.Nickname) ? a.Email : a.Nickname)
                 .Where(s => !string.IsNullOrWhiteSpace(s));
             var joined = string.Join(", ", unresolvedLabels);
-            Log.Info($"Selected broadcast skipped unresolved accounts (no safe window match): {joined}");
+            var now = DateTime.UtcNow;
+            if (!string.Equals(joined, _lastUnresolvedBroadcastLog, StringComparison.Ordinal) ||
+                (now - _lastUnresolvedBroadcastLogUtc).TotalSeconds >= 5)
+            {
+                Log.Info($"Selected broadcast skipped unresolved accounts (no safe window match): {joined}");
+                _lastUnresolvedBroadcastLog = joined;
+                _lastUnresolvedBroadcastLogUtc = now;
+            }
         }
 
         return targetsList;
@@ -1696,7 +1719,7 @@ public partial class MainWindow : Window
                 h != IntPtr.Zero &&
                 h != foreground &&
                 !seenHandles.Contains(h) &&
-                ProcessLauncher.IsWindowProcessName(h, "D2R") &&
+                IsDeliverableD2RWindow(h) &&
                 (includeMainWindowInSelected || !IsMainDriverWindowHandle(h)))
             .ToList();
         if (candidates.Count == 0)
@@ -1735,9 +1758,7 @@ public partial class MainWindow : Window
 
     private static bool IsMainDriverWindowHandle(IntPtr handle)
     {
-        if (handle == IntPtr.Zero)
-            return false;
-        if (!ProcessLauncher.IsWindowProcessName(handle, "D2R"))
+        if (!IsDeliverableD2RWindow(handle))
             return false;
         var title = ProcessLauncher.GetWindowTitle(handle).Trim();
         return string.Equals(title, DriverWindowTitle, StringComparison.OrdinalIgnoreCase);
@@ -1757,7 +1778,7 @@ public partial class MainWindow : Window
         }
 
         var defaultTitleHandles = BroadcastManager.FindWindowsByTitleExact(DriverWindowTitle)
-            .Where(h => h != IntPtr.Zero && ProcessLauncher.IsWindowProcessName(h, "D2R"))
+            .Where(IsDeliverableD2RWindow)
             .ToList();
         if (defaultTitleHandles.Count > 0)
         {
@@ -1771,7 +1792,7 @@ public partial class MainWindow : Window
         }
 
         var foreground = ProcessLauncher.GetForegroundWindowHandle();
-        if (foreground != IntPtr.Zero && ProcessLauncher.IsWindowProcessName(foreground, "D2R"))
+        if (foreground != IntPtr.Zero && IsDeliverableD2RWindow(foreground))
         {
             var foregroundPid = ProcessLauncher.GetWindowProcessId(foreground);
             if (foregroundPid != 0 && !_accountProcessIds.Values.Contains(foregroundPid))
@@ -1786,7 +1807,11 @@ public partial class MainWindow : Window
         if (handles.Count == 0)
             return;
 
-        var pid = ProcessLauncher.GetWindowProcessId(handles[0]);
+        var handle = handles[0];
+        if (!IsDeliverableD2RWindow(handle))
+            return;
+
+        var pid = ProcessLauncher.GetWindowProcessId(handle);
         if (pid == 0 || _accountProcessIds.Values.Contains(pid))
             return;
 

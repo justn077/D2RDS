@@ -173,12 +173,11 @@ public sealed class BroadcastManager : IDisposable
                     var foreground = GetForegroundWindow();
                     foreach (var target in targets)
                     {
-                        var hwnd = target.Handle;
-                        if (hwnd == IntPtr.Zero || hwnd == foreground)
-                            continue;
-
                         var lParamValue = BuildKeyLParam(scanCode, flags, message == WM_KEYUP || message == WM_SYSKEYUP);
-                        PostMessage(hwnd, (uint)message, (IntPtr)vkCode, lParamValue);
+                        foreach (var hwnd in GetDeliveryHandlesForTarget(target.Handle, foreground, settings))
+                        {
+                            PostMessage(hwnd, (uint)message, (IntPtr)vkCode, lParamValue);
+                        }
                     }
                 }
             }
@@ -201,43 +200,58 @@ public sealed class BroadcastManager : IDisposable
                     var targets = _instance._targetsProvider();
                     var foreground = GetForegroundWindow();
                     var pt = info.pt;
-                    var scaled = TryGetScaledPoint(foreground, pt, _instance._classicModeResolver(foreground), out var scaleX, out var scaleY);
+                    var scaled = TryGetScaledPoint(
+                        foreground,
+                        pt,
+                        _instance._classicModeResolver(foreground),
+                        settings,
+                        out var scaleX,
+                        out var scaleY);
                     foreach (var target in targets)
                     {
-                        var hwnd = target.Handle;
-                        if (hwnd == IntPtr.Zero || hwnd == foreground)
-                            continue;
-
-                        var clientPoint = pt;
-                        if (scaled && TryGetClientSize(hwnd, out var targetWidth, out var targetHeight) && targetWidth > 0 && targetHeight > 0)
+                        foreach (var hwnd in GetDeliveryHandlesForTarget(target.Handle, foreground, settings))
                         {
-                            var mappedScaleY = scaleY;
-                            if (ShouldFlipYForVerticalStack(settings, foreground, hwnd))
-                                mappedScaleY = 1.0 - mappedScaleY;
-
-                            if (TryGetGameplayViewport(targetWidth, targetHeight, target.ClassicMode, out var viewport))
+                            var clientPoint = pt;
+                            if (scaled && TryGetClientSize(hwnd, out var targetWidth, out var targetHeight) && targetWidth > 0 && targetHeight > 0)
                             {
-                                var x = (int)Math.Round(viewport.Left + (scaleX * viewport.Width));
-                                var y = (int)Math.Round(viewport.Top + (mappedScaleY * viewport.Height));
-                                clientPoint.X = Clamp(x, viewport.Left, viewport.Left + viewport.Width - 1);
-                                clientPoint.Y = Clamp(y, viewport.Top, viewport.Top + viewport.Height - 1);
-                            }
-                            else
-                            {
-                                var x = (int)Math.Round(scaleX * targetWidth);
-                                var y = (int)Math.Round(mappedScaleY * targetHeight);
-                                clientPoint.X = Clamp(x, 0, targetWidth - 1);
-                                clientPoint.Y = Clamp(y, 0, targetHeight - 1);
-                            }
-                        }
-                        else if (!TryScreenToClient(hwnd, pt, out clientPoint))
-                        {
-                            continue;
-                        }
+                                var mappedScaleY = scaleY;
+                                if (ShouldFlipYForVerticalStack(settings, foreground, hwnd))
+                                    mappedScaleY = 1.0 - mappedScaleY;
 
-                        var lParamValue = (IntPtr)((clientPoint.Y << 16) | (clientPoint.X & 0xFFFF));
-                        var wParamValue = GetMouseWParam(message, info.mouseData);
-                        PostMessage(hwnd, message, wParamValue, lParamValue);
+                                var fullTargetRect = new RectInt(0, 0, targetWidth, targetHeight);
+                                var targetRegion = fullTargetRect;
+                                if (settings.UseRepeaterRegions &&
+                                    TryParseNormalizedRegion(settings.TargetRepeaterRegion, out var nx, out var ny, out var nw, out var nh))
+                                {
+                                    targetRegion = ApplyNormalizedRegion(fullTargetRect, nx, ny, nw, nh);
+                                }
+
+                                var useClientDirect = settings.MouseTransformMode.Equals("ClientDirect", StringComparison.OrdinalIgnoreCase);
+                                if (TryGetGameplayViewport(targetWidth, targetHeight, target.ClassicMode, out var viewport))
+                                {
+                                    var mappedRect = useClientDirect ? targetRegion : IntersectRect(targetRegion, viewport);
+                                    var x = (int)Math.Round(mappedRect.Left + (scaleX * mappedRect.Width));
+                                    var y = (int)Math.Round(mappedRect.Top + (mappedScaleY * mappedRect.Height));
+                                    clientPoint.X = Clamp(x, mappedRect.Left, mappedRect.Left + mappedRect.Width - 1);
+                                    clientPoint.Y = Clamp(y, mappedRect.Top, mappedRect.Top + mappedRect.Height - 1);
+                                }
+                                else
+                                {
+                                    var x = (int)Math.Round(targetRegion.Left + (scaleX * targetRegion.Width));
+                                    var y = (int)Math.Round(targetRegion.Top + (mappedScaleY * targetRegion.Height));
+                                    clientPoint.X = Clamp(x, targetRegion.Left, targetRegion.Left + targetRegion.Width - 1);
+                                    clientPoint.Y = Clamp(y, targetRegion.Top, targetRegion.Top + targetRegion.Height - 1);
+                                }
+                            }
+                            else if (!TryScreenToClient(hwnd, pt, out clientPoint))
+                            {
+                                continue;
+                            }
+
+                            var lParamValue = (IntPtr)((clientPoint.Y << 16) | (clientPoint.X & 0xFFFF));
+                            var wParamValue = GetMouseWParam(message, info.mouseData);
+                            PostMessage(hwnd, message, wParamValue, lParamValue);
+                        }
                     }
                 }
             }
@@ -384,7 +398,13 @@ public sealed class BroadcastManager : IDisposable
         return (GetAsyncKeyState(vk) & 0x8000) != 0;
     }
 
-    private static bool TryGetScaledPoint(IntPtr foreground, POINT screenPoint, bool foregroundClassic, out double scaleX, out double scaleY)
+    private static bool TryGetScaledPoint(
+        IntPtr foreground,
+        POINT screenPoint,
+        bool foregroundClassic,
+        BroadcastSettings settings,
+        out double scaleX,
+        out double scaleY)
     {
         scaleX = 0;
         scaleY = 0;
@@ -399,20 +419,84 @@ public sealed class BroadcastManager : IDisposable
         if (width <= 0 || height <= 0)
             return false;
 
+        var sourceRect = new RectInt(0, 0, width, height);
+        if (settings.UseRepeaterRegions &&
+            TryParseNormalizedRegion(settings.SourceRepeaterRegion, out var sx, out var sy, out var sw, out var sh))
+        {
+            sourceRect = ApplyNormalizedRegion(sourceRect, sx, sy, sw, sh);
+        }
+
         if (TryGetGameplayViewport(width, height, foregroundClassic, out var viewport))
         {
+            var useClientDirect = settings.MouseTransformMode.Equals("ClientDirect", StringComparison.OrdinalIgnoreCase);
+            var sourceViewport = useClientDirect ? sourceRect : IntersectRect(sourceRect, viewport);
             var relX = screenPoint.X - clientScreenRect.Left;
             var relY = screenPoint.Y - clientScreenRect.Top;
-            var nx = (relX - viewport.Left) / (double)viewport.Width;
-            var ny = (relY - viewport.Top) / (double)viewport.Height;
+            var nx = (relX - sourceViewport.Left) / (double)sourceViewport.Width;
+            var ny = (relY - sourceViewport.Top) / (double)sourceViewport.Height;
             scaleX = Clamp(nx, 0, 1);
             scaleY = Clamp(ny, 0, 1);
             return true;
         }
 
-        scaleX = Clamp((screenPoint.X - clientScreenRect.Left) / (double)width, 0, 1);
-        scaleY = Clamp((screenPoint.Y - clientScreenRect.Top) / (double)height, 0, 1);
+        var localX = (screenPoint.X - clientScreenRect.Left) - sourceRect.Left;
+        var localY = (screenPoint.Y - clientScreenRect.Top) - sourceRect.Top;
+        scaleX = Clamp(localX / (double)sourceRect.Width, 0, 1);
+        scaleY = Clamp(localY / (double)sourceRect.Height, 0, 1);
         return true;
+    }
+
+    private static RectInt ApplyNormalizedRegion(RectInt rect, double x, double y, double w, double h)
+    {
+        var left = rect.Left + (int)Math.Round(rect.Width * x);
+        var top = rect.Top + (int)Math.Round(rect.Height * y);
+        var width = Math.Max(1, (int)Math.Round(rect.Width * w));
+        var height = Math.Max(1, (int)Math.Round(rect.Height * h));
+        var maxRight = rect.Left + rect.Width;
+        var maxBottom = rect.Top + rect.Height;
+        if (left + width > maxRight)
+            width = Math.Max(1, maxRight - left);
+        if (top + height > maxBottom)
+            height = Math.Max(1, maxBottom - top);
+        return new RectInt(left, top, width, height);
+    }
+
+    private static bool TryParseNormalizedRegion(string text, out double x, out double y, out double w, out double h)
+    {
+        x = y = 0;
+        w = h = 1;
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var parts = text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 4)
+            return false;
+        if (!double.TryParse(parts[0], out x) ||
+            !double.TryParse(parts[1], out y) ||
+            !double.TryParse(parts[2], out w) ||
+            !double.TryParse(parts[3], out h))
+            return false;
+
+        x = Clamp(x, 0, 1);
+        y = Clamp(y, 0, 1);
+        w = Clamp(w, 0.01, 1);
+        h = Clamp(h, 0.01, 1);
+        if (x + w > 1)
+            w = 1 - x;
+        if (y + h > 1)
+            h = 1 - y;
+        return w > 0 && h > 0;
+    }
+
+    private static RectInt IntersectRect(RectInt a, RectInt b)
+    {
+        var left = Math.Max(a.Left, b.Left);
+        var top = Math.Max(a.Top, b.Top);
+        var right = Math.Min(a.Left + a.Width, b.Left + b.Width);
+        var bottom = Math.Min(a.Top + a.Height, b.Top + b.Height);
+        if (right <= left || bottom <= top)
+            return b;
+        return new RectInt(left, top, right - left, bottom - top);
     }
 
     private static bool TryGetClientSize(IntPtr hwnd, out int width, out int height)
@@ -554,6 +638,47 @@ public sealed class BroadcastManager : IDisposable
         return true;
     }
 
+    private static IEnumerable<IntPtr> GetDeliveryHandlesForTarget(IntPtr targetHandle, IntPtr foreground, BroadcastSettings settings)
+    {
+        if (targetHandle == IntPtr.Zero)
+            yield break;
+        if (!ProcessLauncher.IsWindowResponsive(targetHandle))
+            yield break;
+
+        if (targetHandle != foreground)
+            yield return targetHandle;
+
+        var engine = settings.InputEngine ?? "LegacyWindowMessages";
+        if (!engine.Equals("IsbStyleProcessFanout", StringComparison.OrdinalIgnoreCase))
+            yield break;
+
+        var seen = new HashSet<IntPtr> { targetHandle };
+        GetWindowThreadProcessId(targetHandle, out var pid);
+        if (pid == 0)
+            yield break;
+
+        EnumWindows((hwnd, _) =>
+        {
+            if (hwnd == IntPtr.Zero || hwnd == foreground || !IsWindowVisible(hwnd))
+                return true;
+            if (!ProcessLauncher.IsWindowResponsive(hwnd))
+                return true;
+
+            GetWindowThreadProcessId(hwnd, out var windowPid);
+            if (windowPid != pid)
+                return true;
+
+            if (seen.Add(hwnd))
+            {
+                // iterator bridge via closure list
+            }
+            return true;
+        }, IntPtr.Zero);
+
+        foreach (var hwnd in seen)
+            yield return hwnd;
+    }
+
     // Fallback: resolve windows by exact title (used when process handle isn't available).
     public static IReadOnlyList<IntPtr> FindWindowsByTitleExact(string title)
     {
@@ -563,7 +688,7 @@ public sealed class BroadcastManager : IDisposable
 
         EnumWindows((hwnd, _) =>
         {
-            if (!IsWindowVisible(hwnd))
+            if (!IsWindowVisible(hwnd) || !ProcessLauncher.IsWindowResponsive(hwnd))
                 return true;
 
             var text = GetWindowText(hwnd);
@@ -700,6 +825,9 @@ public sealed class BroadcastManager : IDisposable
 
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
 
     [DllImport("user32.dll")]
     private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);

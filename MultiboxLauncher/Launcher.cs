@@ -653,6 +653,22 @@ public static class ProcessLauncher
         }
     }
 
+    public static bool IsWindowResponsive(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || !IsWindow(hwnd))
+            return false;
+
+        try
+        {
+            return !IsHungAppWindow(hwnd);
+        }
+        catch
+        {
+            // If detection fails, treat as responsive so we don't hide windows unexpectedly.
+            return true;
+        }
+    }
+
     public static void TryApplyBorderlessStyle(IntPtr hwnd, bool allowResize)
     {
         if (hwnd == IntPtr.Zero)
@@ -997,6 +1013,12 @@ public static class ProcessLauncher
 
     [DllImport("user32.dll")]
     private static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsHungAppWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr hWnd);
 }
 
 public static class Defaults
