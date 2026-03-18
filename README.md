@@ -49,9 +49,10 @@ Up to **7 accounts** are supported.
 ## Credentials & storage
 - Passwords are stored in **Windows Credential Manager**.
 - `config.json` stores only non-sensitive metadata and credential keys.
+- The live config file is shared across versions at `%APPDATA%\D2RDS\config.json`.
 
 ## Configure (advanced)
-Edit `MultiboxLauncher\config.json` if you want to tweak:
+Edit `%APPDATA%\D2RDS\config.json` if you want to tweak:
 - `preLaunch.path` (script to run before each launch)
 - `installPath`
 - `region`

@@ -581,12 +581,6 @@ public partial class MainWindow : Window
         _config.Broadcast.Mouse = ChkBroadcastMouse.IsChecked == true;
         _config.Broadcast.VerticalMonitorStackMode = ChkBroadcastVerticalStack.IsChecked == true;
         _config.Broadcast.InputEngine = CmbBroadcastEngine.SelectedItem?.ToString() ?? "LegacyWindowMessages";
-        // Advanced mapping stays internal/automatic.
-        _config.Broadcast.MouseTransformMode = "Viewport";
-        _config.Broadcast.UseRepeaterRegions = false;
-        _config.Broadcast.SourceRepeaterRegion = "";
-        _config.Broadcast.TargetRepeaterRegion = "";
-
         _config.Broadcast.ToggleBroadcastHotkey = TxtBroadcastHotkey.Text.Trim();
         _config.Broadcast.ToggleModeHotkey = TxtBroadcastModeHotkey.Text.Trim();
 
@@ -658,11 +652,6 @@ public partial class MainWindow : Window
     private void SaveLayoutSettings()
     {
         _config.WindowLayout.Enabled = ChkSwapLayout.IsChecked == true;
-        // Keep layout region model internal/automatic.
-        _config.WindowLayout.UseRegionModel = false;
-        _config.WindowLayout.InstantSwap = true;
-        _config.WindowLayout.ForegroundRegion = "";
-        _config.WindowLayout.BackgroundRegion = "";
         if (CmbLayoutMonitor.SelectedItem is MonitorOption option)
             _config.WindowLayout.GridMonitorDevice = option.DeviceName;
         ConfigLoader.Save(_config);
@@ -695,16 +684,8 @@ public partial class MainWindow : Window
             _config.Broadcast.ToggleBroadcastHotkey = TxtBroadcastHotkey.Text.Trim();
             _config.Broadcast.ToggleModeHotkey = TxtBroadcastModeHotkey.Text.Trim();
             _config.Broadcast.InputEngine = CmbBroadcastEngine.SelectedItem?.ToString() ?? "LegacyWindowMessages";
-            _config.Broadcast.MouseTransformMode = "Viewport";
-            _config.Broadcast.UseRepeaterRegions = false;
-            _config.Broadcast.SourceRepeaterRegion = "";
-            _config.Broadcast.TargetRepeaterRegion = "";
 
             _config.WindowLayout.Enabled = ChkSwapLayout.IsChecked == true;
-            _config.WindowLayout.UseRegionModel = false;
-            _config.WindowLayout.InstantSwap = true;
-            _config.WindowLayout.ForegroundRegion = "";
-            _config.WindowLayout.BackgroundRegion = "";
             if (CmbLayoutMonitor.SelectedItem is MonitorOption layoutMonitor)
                 _config.WindowLayout.GridMonitorDevice = layoutMonitor.DeviceName;
 

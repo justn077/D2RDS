@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
@@ -43,11 +44,12 @@ public sealed class LauncherConfig
         WindowLayout.BackgroundRegion ??= "";
         WindowLayout.ResetRegion ??= "";
         PreLaunch.HandlePath ??= "";
-        if (!Broadcast.DefaultsApplied || !Broadcast.Keyboard || !Broadcast.Mouse)
+        if (!Broadcast.DefaultsApplied)
         {
-            // Ensure keyboard/mouse default on for existing configs.
-            Broadcast.Keyboard = true;
-            Broadcast.Mouse = true;
+            if (string.IsNullOrWhiteSpace(Broadcast.ToggleBroadcastHotkey))
+                Broadcast.ToggleBroadcastHotkey = "Ctrl+Alt+B";
+            if (string.IsNullOrWhiteSpace(Broadcast.ToggleModeHotkey))
+                Broadcast.ToggleModeHotkey = "Ctrl+Alt+M";
             Broadcast.DefaultsApplied = true;
         }
         if (Broadcast.OverlayLeft.HasValue && (double.IsNaN(Broadcast.OverlayLeft.Value) || double.IsInfinity(Broadcast.OverlayLeft.Value)))
@@ -147,27 +149,35 @@ public sealed class AccountLayoutBroadcastBinding
 
 public static class ConfigLoader
 {
-    public static string DefaultConfigPath => System.IO.Path.Combine(AppContext.BaseDirectory, "config.json");
+    private static readonly JsonSerializerOptions DeserializeOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    private static readonly JsonSerializerOptions SerializeOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    public static string ConfigDirectory =>
+        System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "D2RDS");
+
+    public static string DefaultConfigPath => System.IO.Path.Combine(ConfigDirectory, "config.json");
+
+    public static string LegacyConfigPath => System.IO.Path.Combine(AppContext.BaseDirectory, "config.json");
 
     public static LauncherConfig LoadOrCreate()
     {
         var configPath = DefaultConfigPath;
-        if (!File.Exists(configPath))
-        {
-            var created = new LauncherConfig();
-            created.Normalize();
-            Save(created);
-            return created;
-        }
+        EnsureConfigExists(configPath);
 
         var json = File.ReadAllText(configPath);
-        var config = JsonSerializer.Deserialize<LauncherConfig>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-
+        var config = JsonSerializer.Deserialize<LauncherConfig>(json, DeserializeOptions);
         if (config is null)
-            throw new InvalidOperationException("Failed to parse config.json");
+            throw new InvalidOperationException($"Failed to parse config file: {configPath}");
 
         config.Normalize();
         return config;
@@ -176,12 +186,116 @@ public static class ConfigLoader
     public static void Save(LauncherConfig config)
     {
         config.Normalize();
-        var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+        Directory.CreateDirectory(ConfigDirectory);
+        var json = JsonSerializer.Serialize(config, SerializeOptions);
+        var tempPath = DefaultConfigPath + ".tmp";
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, DefaultConfigPath, true);
+    }
+
+    private static void EnsureConfigExists(string configPath)
+    {
+        if (!File.Exists(configPath))
         {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-        File.WriteAllText(DefaultConfigPath, json);
+            Directory.CreateDirectory(ConfigDirectory);
+
+            var legacyPath = FindBestLegacyConfigPath();
+            if (!string.IsNullOrWhiteSpace(legacyPath))
+            {
+                File.Copy(legacyPath, configPath, true);
+                return;
+            }
+
+            var created = new LauncherConfig();
+            created.Normalize();
+            Save(created);
+        }
+    }
+
+    private static string? FindBestLegacyConfigPath()
+    {
+        var candidates = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        AddCandidate(candidates, seen, LegacyConfigPath);
+
+        var appDir = AppContext.BaseDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar);
+        var parentDir = Directory.GetParent(appDir);
+        if (parentDir is not null)
+        {
+            foreach (var siblingDir in parentDir.EnumerateDirectories("D2RDS*"))
+                AddCandidate(candidates, seen, System.IO.Path.Combine(siblingDir.FullName, "config.json"));
+        }
+
+        return candidates
+            .Select(path => new
+            {
+                Path = path,
+                Score = ScoreLegacyConfig(path),
+                LastWriteUtc = File.GetLastWriteTimeUtc(path)
+            })
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenByDescending(candidate => candidate.LastWriteUtc)
+            .Select(candidate => candidate.Path)
+            .FirstOrDefault();
+    }
+
+    private static void AddCandidate(List<string> candidates, HashSet<string> seen, string path)
+    {
+        if (!File.Exists(path))
+            return;
+
+        var fullPath = System.IO.Path.GetFullPath(path);
+        if (!seen.Add(fullPath))
+            return;
+
+        if (string.Equals(fullPath, System.IO.Path.GetFullPath(DefaultConfigPath), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        candidates.Add(fullPath);
+    }
+
+    private static int ScoreLegacyConfig(string path)
+    {
+        try
+        {
+            var json = File.ReadAllText(path);
+            var config = JsonSerializer.Deserialize<LauncherConfig>(json, DeserializeOptions);
+            if (config is null)
+                return int.MinValue;
+
+            config.Normalize();
+
+            var score = 0;
+            score += config.Accounts.Count * 100;
+            if (!string.IsNullOrWhiteSpace(config.Region))
+                score += 20;
+            if (!string.IsNullOrWhiteSpace(config.InstallPath) &&
+                !string.Equals(config.InstallPath, Defaults.DefaultInstallPath, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 10;
+            }
+            if (config.LockOrder)
+                score += 5;
+            if (config.MinimizeToTaskbar)
+                score += 5;
+            if (config.Broadcast.Enabled)
+                score += 5;
+            if (!config.Broadcast.BroadcastAll)
+                score += 5;
+            if (!string.Equals(config.Broadcast.ToggleBroadcastHotkey, "Ctrl+Alt+B", StringComparison.OrdinalIgnoreCase))
+                score += 10;
+            if (!string.Equals(config.Broadcast.ToggleModeHotkey, "Ctrl+Alt+M", StringComparison.OrdinalIgnoreCase))
+                score += 10;
+            if (config.Accounts.Any(a => !a.BroadcastEnabled || a.ClassicMode || !string.IsNullOrWhiteSpace(a.LaunchMonitorDevice) || !string.IsNullOrWhiteSpace(a.Region)))
+                score += 10;
+
+            return score;
+        }
+        catch
+        {
+            return int.MinValue;
+        }
     }
 }
 

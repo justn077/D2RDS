@@ -5,6 +5,12 @@
              StartupUri="MainWindow.xaml"
              ShutdownMode="OnMainWindowClose">
     <Application.Resources>
-        <!-- App-level resources can be added here if needed -->
+        <!-- Ensure native popup-based controls (ComboBox dropdowns) use D2RDS dark-red theme -->
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#341010"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#E9DDC6"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#2A0D0D"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#E9DDC6"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#5A1A1A"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#E9DDC6"/>
     </Application.Resources>
 </Application>

@@ -28,6 +28,12 @@
         <SolidColorBrush x:Key="ComboPopupBackgroundBrush" Color="{StaticResource ColorComboPopupBackground}"/>
         <SolidColorBrush x:Key="ComboHighlightBrush" Color="{StaticResource ColorComboHighlight}"/>
 
+        <!-- Force native ComboBox popup to use the app's dark palette -->
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="{StaticResource ColorComboPopupBackground}"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="{StaticResource ColorText}"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="{StaticResource ColorComboHighlight}"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="{StaticResource ColorText}"/>
+
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
         </Style>
@@ -76,10 +82,13 @@
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrushDark}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MaxDropDownHeight" Value="360"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
-                        <Grid>
+                        <Grid SnapsToDevicePixels="True">
                             <Border Name="MainBorder"
                                     Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}"
@@ -95,24 +104,39 @@
                                                       VerticalAlignment="Center"
                                                       HorizontalAlignment="Left"
                                                       Content="{TemplateBinding SelectionBoxItem}"
-                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
-                                    <Border Grid.Column="1" Background="{StaticResource PanelBrush}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1,0,0,0">
-                                        <Path HorizontalAlignment="Center" VerticalAlignment="Center" Fill="{StaticResource TextBrush}" Data="M 0 0 L 4 4 L 8 0 Z"/>
-                                    </Border>
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      IsHitTestVisible="False"/>
+                                    <ToggleButton Grid.Column="1"
+                                                  Focusable="False"
+                                                  ClickMode="Press"
+                                                  IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                        <Border Background="{StaticResource PanelBrush}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="1,0,0,0">
+                                            <Path HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  Fill="{StaticResource TextBrush}"
+                                                  Data="M 0 0 L 4 4 L 8 0 Z"/>
+                                        </Border>
+                                    </ToggleButton>
                                 </Grid>
                             </Border>
                             <Popup Name="Popup"
                                    Placement="Bottom"
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
                                    AllowsTransparency="True"
+                                   Focusable="False"
                                    PopupAnimation="Fade">
                                 <Border Background="{StaticResource ComboPopupBackgroundBrush}"
                                         BorderBrush="{StaticResource BorderBrushDark}"
                                         BorderThickness="1"
                                         CornerRadius="3"
-                                        MinWidth="{TemplateBinding ActualWidth}">
-                                    <ScrollViewer SnapsToDevicePixels="True">
-                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                        MinWidth="{TemplateBinding ActualWidth}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  CanContentScroll="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
                                     </ScrollViewer>
                                 </Border>
                             </Popup>
@@ -128,6 +152,14 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.6"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style TargetType="ComboBoxItem">
@@ -166,6 +198,8 @@
                     <Button Name="BtnReload" Width="90">Reload</Button>
                     <Button Name="BtnEdit" Width="120">Edit config</Button>
                     <Button Name="BtnUpdate" Width="120">Update D2RDS</Button>
+                    <Button Name="BtnExportProfile" Width="120">Export profile</Button>
+                    <Button Name="BtnImportProfile" Width="120">Import profile</Button>
                     <CheckBox Name="ChkLockOrder" Margin="0,0,12,0"
                               ToolTip="Prevents reordering accounts with Up/Down.">Lock order</CheckBox>
                     <CheckBox Name="ChkMinimizeToTaskbar" Margin="0,0,12,0"
@@ -185,6 +219,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,8,6" VerticalAlignment="Center">Region</TextBlock>
@@ -197,18 +232,22 @@
                     </StackPanel>
 
                     <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,0,8,6" VerticalAlignment="Center">Broadcast</TextBlock>
-                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,6">
+                    <WrapPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,6">
                         <CheckBox Name="ChkBroadcastEnabled" VerticalAlignment="Center" Margin="0,0,10,0"
                                   ToolTip="Master on/off for broadcasting input.">Enabled</CheckBox>
                         <CheckBox Name="ChkBroadcastAll" VerticalAlignment="Center" Margin="0,0,10,0"
                                   ToolTip="If checked, broadcast to all running D2R windows. If unchecked, use per-account Bcast toggles.">All</CheckBox>
+                        <CheckBox Name="ChkBroadcastIncludeMain" VerticalAlignment="Center" Margin="0,0,10,0"
+                                  ToolTip="When All is off, include the normally launched 'Diablo II: Resurrected' window as a selective broadcast target.">Include main window</CheckBox>
+                        <CheckBox Name="ChkBroadcastSound" VerticalAlignment="Center" Margin="0,0,10,0"
+                                  ToolTip="Play alert sounds when broadcasting is turned on or off.">Sound alert</CheckBox>
                         <CheckBox Name="ChkBroadcastKeyboard" VerticalAlignment="Center" Margin="0,0,10,0"
                                   ToolTip="Broadcast keyboard input when enabled.">Keyboard</CheckBox>
                         <CheckBox Name="ChkBroadcastMouse" VerticalAlignment="Center" Margin="0,0,10,0"
                                   ToolTip="Broadcast mouse input when enabled.">Mouse</CheckBox>
                         <CheckBox Name="ChkBroadcastVerticalStack" VerticalAlignment="Center"
                                   ToolTip="Enable if one game monitor is physically above/below the other and mouse mapping is inverted.">Vertical stack</CheckBox>
-                    </StackPanel>
+                    </WrapPanel>
 
                 <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Broadcast hotkeys</TextBlock>
                 <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
@@ -218,18 +257,28 @@
                              ToolTip="Global hotkey to toggle All vs Selected mode (default: Ctrl+Alt+M)."/>
                 </StackPanel>
 
-                <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Window layout</TextBlock>
+                <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">Window placement</TextBlock>
                 <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal">
                     <CheckBox Name="ChkSwapLayout" VerticalAlignment="Center" Margin="0,0,10,0"
-                              ToolTip="Keep one D2R fullscreen on the primary monitor and tile the rest on the selected monitor.">Swap grid</CheckBox>
+                              ToolTip="Automatically keep one active D2R on your main display and place others on the selected display.">Auto-place windows</CheckBox>
                     <ComboBox Name="CmbLayoutMonitor" Width="260"
-                              ToolTip="Monitor used for the tiled background windows."/>
+                              ToolTip="Display used for the background windows when auto-place is enabled."/>
                 </StackPanel>
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,6,8,0" VerticalAlignment="Center">Broadcast engine</TextBlock>
+                <ComboBox Grid.Row="5" Grid.Column="1" Name="CmbBroadcastEngine" Width="360" Margin="0,6,0,0"
+                          ToolTip="Legacy: single window-message target. ISB-style: per-process fanout delivery (experimental)."/>
+
                 </Grid>
 
                 <TextBlock Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap">
-                    First launch: open one D2R account normally (Battle.net). Put that account first in the list (driver). Use D2RDS to launch the others; Selected broadcast will include the driver window automatically.
+                    First launch: open one D2R account normally (Battle.net). Put that account first in the list (driver). Use D2RDS to launch the others; in Selected mode, enable "Include main window" only when you want that driver window to receive broadcast.
                 </TextBlock>
+                <TextBlock Name="TxtBroadcastDiagnostics"
+                           Margin="0,6,0,0"
+                           Foreground="{StaticResource MutedBrush}"
+                           FontSize="11"
+                           TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
 

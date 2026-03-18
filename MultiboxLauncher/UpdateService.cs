@@ -114,7 +114,9 @@ public static class UpdateService
         var script = $@"
 $pid = {Process.GetCurrentProcess().Id}
 while (Get-Process -Id $pid -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 300 }}
-Copy-Item -Path '{extractDir}\\*' -Destination '{appDir}' -Recurse -Force
+Get-ChildItem -LiteralPath '{extractDir}' |
+    Where-Object {{ $_.Name -ne 'config.json' }} |
+    Copy-Item -Destination '{appDir}' -Recurse -Force
 Start-Process -FilePath '{exePath}'
 ";
         await File.WriteAllTextAsync(updater, script);
